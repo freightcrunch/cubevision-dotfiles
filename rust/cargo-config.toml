@@ -1,0 +1,33 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Cargo config — Jetson Orin Nano (aarch64)                          ║
+# ║  Install to: ~/.cargo/config.toml                                   ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+[build]
+# Use all 6 cores for compilation
+jobs = 6
+
+[target.aarch64-unknown-linux-gnu]
+# Link with mold for faster linking (install: sudo apt install mold)
+# Uncomment after installing mold:
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[net]
+retry = 3
+git-fetch-with-cli = true
+
+[registries.crates-io]
+protocol = "sparse"
+
+[profile.dev]
+# Faster debug builds — critical on constrained Jetson hardware
+opt-level = 0
+debug = true
+incremental = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

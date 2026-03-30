@@ -1,0 +1,10 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  npmrc — Install to: ~/.config/npm/npmrc                            ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+init-author-name=
+init-license=MIT
+init-version=0.1.0
+save-exact=true
+engine-strict=true
+fund=false
+audit-level=moderate

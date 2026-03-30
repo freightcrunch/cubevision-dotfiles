@@ -1,0 +1,24 @@
+-- ~/.sqliterc — SQLite runtime configuration
+-- Jetson Orin Nano optimized settings
+
+-- Display
+.headers on
+.mode box
+.separator ROW "\n"
+.nullvalue [NULL]
+
+-- Performance: WAL mode for concurrent reads
+.timer on
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
+
+-- Memory-mapped I/O (256 MB — safe for 8 GB Jetson)
+PRAGMA mmap_size = 268435456;
+
+-- Cache size: 64 MB (negative = KB)
+PRAGMA cache_size = -65536;
+
+-- Temp store in memory
+PRAGMA temp_store = MEMORY;

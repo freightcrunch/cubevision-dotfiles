@@ -1,0 +1,55 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  Cross-compilation config — targets for hello-server                 ║
+# ║                                                                      ║
+# ║  Targets:                                                            ║
+# ║    x86_64-unknown-linux-gnu      — standard x86_64 Linux             ║
+# ║    aarch64-unknown-linux-gnu     — ARM64 Linux (Jetson, RPi, etc.)   ║
+# ║    aarch64-apple-darwin          — Apple Silicon (M1/M2/M3/M4)       ║
+# ║                                                                      ║
+# ║  Usage:                                                              ║
+# ║    cargo install cross --git https://github.com/cross-rs/cross      ║
+# ║    cross build --target x86_64-unknown-linux-gnu --release           ║
+# ║    cross build --target aarch64-unknown-linux-gnu --release          ║
+# ║    cross build --target aarch64-apple-darwin --release               ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+[build.env]
+passthrough = ["APP_ENV", "HOST", "PORT"]
+
+# ── x86_64 Linux ─────────────────────────────────────────────────────
+[target.x86_64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/x86_64-unknown-linux-gnu:main"
+
+[target.x86_64-unknown-linux-gnu.env]
+passthrough = ["APP_ENV", "HOST", "PORT"]
+
+# ── aarch64 Linux (Jetson / ARM64 servers) ───────────────────────────
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:main"
+
+[target.aarch64-unknown-linux-gnu.env]
+passthrough = ["APP_ENV", "HOST", "PORT"]
+
+# ── Apple Silicon (M1/M2/M3 Max — aarch64-apple-darwin) ─────────────
+# NOTE: cross-rs does not provide a Docker image for darwin targets.
+# Cross-compiling to macOS from Linux requires additional setup:
+#
+#   Option A — Use osxcross (recommended for CI):
+#     1. Build osxcross: https://github.com/tpoechtrager/osxcross
+#     2. Set CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER to the osxcross linker
+#     3. Use a custom Docker image with osxcross baked in
+#
+#   Option B — Native compilation on macOS:
+#     rustup target add aarch64-apple-darwin
+#     cargo build --target aarch64-apple-darwin --release
+#
+#   Option C — Use Zig as a cross-linker:
+#     cargo install cargo-zigbuild
+#     cargo zigbuild --target aarch64-apple-darwin --release
+#
+[target.aarch64-apple-darwin]
+# Uncomment and set to a custom image with osxcross if cross-compiling from Linux:
+# image = "your-registry/osxcross-aarch64-apple-darwin:latest"
+
+[target.aarch64-apple-darwin.env]
+passthrough = ["APP_ENV", "HOST", "PORT"]

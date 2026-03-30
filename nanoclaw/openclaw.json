@@ -1,0 +1,22 @@
+{
+  "gateway": {
+    "port": 18789,
+    "bind": "loopback"
+  },
+  "agents": {
+    "primaryProvider": "ollama",
+    "model": "qwen3:1.7b"
+  },
+  "providers": {
+    "ollama": {
+      "type": "ollama",
+      "baseUrl": "http://127.0.0.1:11434"
+    }
+  },
+  "memory": {
+    "enabled": true
+  },
+  "plugins": {
+    "allow": []
+  }
+}

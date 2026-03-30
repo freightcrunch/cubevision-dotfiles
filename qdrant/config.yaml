@@ -1,0 +1,47 @@
+# Qdrant configuration for Jetson Orin Nano (8 GB RAM)
+# Docs: https://qdrant.tech/documentation/guides/configuration/
+
+log_level: INFO
+
+storage:
+  # Store data on disk to conserve RAM
+  storage_path: ./storage
+  snapshots_path: ./snapshots
+
+  # On-disk payload storage (recommended for low-RAM devices)
+  on_disk_payload: true
+
+  # Optimizers — tuned for Jetson's 6 ARM cores
+  optimizers:
+    deleted_threshold: 0.2
+    vacuum_min_vector_number: 1000
+    default_segment_number: 2
+    max_segment_size_kb: 200000
+    memmap_threshold_kb: 50000
+    indexing_threshold_kb: 20000
+    flush_interval_sec: 5
+    max_optimization_threads: 3
+
+  # HNSW index settings
+  hnsw_index:
+    m: 16
+    ef_construct: 100
+    full_scan_threshold: 10000
+    max_indexing_threads: 3
+    on_disk: true
+
+  # Write-ahead log
+  wal:
+    wal_capacity_mb: 32
+    wal_segments_ahead: 0
+
+service:
+  host: 127.0.0.1
+  http_port: 6333
+  grpc_port: 6334
+  enable_cors: true
+
+  # API key (uncomment to enable authentication)
+  # api_key: "your-secret-key-here"
+
+telemetry_disabled: true

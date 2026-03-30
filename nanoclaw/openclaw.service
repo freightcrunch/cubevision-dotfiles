@@ -1,0 +1,47 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  OpenClaw Gateway — systemd service for Jetson Orin Nano             ║
+# ║                                                                      ║
+# ║  Install to: /etc/systemd/system/openclaw.service                    ║
+# ║  Enable:     sudo systemctl enable --now openclaw                    ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+[Unit]
+Description=OpenClaw Gateway Service (Jetson Orin Nano)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=openclawuser
+Group=openclawuser
+SupplementaryGroups=brew
+
+WorkingDirectory=/opt/openclaw/data
+
+Environment=OPENCLAW_HOME=/opt/openclaw/data
+Environment=HOME=/opt/openclaw/data
+Environment=GIT_CONFIG_GLOBAL=/opt/openclaw/data/.gitconfig
+
+# Minimal PATH + brew
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin
+
+# Brew caches/logs inside OpenClaw state dir
+Environment=HOMEBREW_CACHE=/opt/openclaw/data/.cache/Homebrew
+Environment=HOMEBREW_LOGS=/opt/openclaw/data/.logs/Homebrew
+
+# Loopback gateway (change to --bind all for LAN access)
+ExecStart=/usr/bin/env openclaw gateway --bind loopback --port 18789
+
+Restart=always
+RestartSec=5
+
+# Hardening
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=no
+ReadWritePaths=/opt/openclaw/data /home/linuxbrew/.linuxbrew
+
+[Install]
+WantedBy=multi-user.target
