@@ -1,0 +1,134 @@
+# Alacritty configuration — Jetson Orin Nano
+# Docs: https://alacritty.org/config-alacritty.html
+
+[general]
+live_config_reload = true
+
+[window]
+padding = { x = 8, y = 8 }
+decorations = "Full"
+opacity = 0.95
+dynamic_title = true
+
+[scrolling]
+history = 10000
+multiplier = 3
+
+[font]
+size = 11.0
+
+[font.normal]
+family = "JetBrains Mono"
+style = "Regular"
+
+[font.bold]
+family = "JetBrains Mono"
+style = "Bold"
+
+[font.italic]
+family = "JetBrains Mono"
+style = "Italic"
+
+[cursor]
+style = { shape = "Block", blinking = "On" }
+vi_mode_style = { shape = "Underline", blinking = "Off" }
+
+[mouse]
+hide_when_typing = true
+
+[selection]
+save_to_clipboard = true
+
+# Catppuccin Mocha color scheme
+[colors.primary]
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+dim_foreground = "#7f849c"
+bright_foreground = "#cdd6f4"
+
+[colors.cursor]
+text = "#1e1e2e"
+cursor = "#f5e0dc"
+
+[colors.vi_mode_cursor]
+text = "#1e1e2e"
+cursor = "#b4befe"
+
+[colors.search.matches]
+foreground = "#1e1e2e"
+background = "#a6adc8"
+
+[colors.search.focused_match]
+foreground = "#1e1e2e"
+background = "#a6e3a1"
+
+[colors.footer_bar]
+foreground = "#1e1e2e"
+background = "#a6adc8"
+
+[colors.hints.start]
+foreground = "#1e1e2e"
+background = "#f9e2af"
+
+[colors.hints.end]
+foreground = "#1e1e2e"
+background = "#a6adc8"
+
+[colors.selection]
+text = "#1e1e2e"
+background = "#f5e0dc"
+
+[colors.normal]
+black = "#45475a"
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#f5c2e7"
+cyan = "#94e2d5"
+white = "#bac2de"
+
+[colors.bright]
+black = "#585b70"
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#f5c2e7"
+cyan = "#94e2d5"
+white = "#a6adc8"
+
+[colors.dim]
+black = "#45475a"
+red = "#f38ba8"
+green = "#a6e3a1"
+yellow = "#f9e2af"
+blue = "#89b4fa"
+magenta = "#f5c2e7"
+cyan = "#94e2d5"
+white = "#bac2de"
+
+[[keyboard.bindings]]
+key = "V"
+mods = "Control|Shift"
+action = "Paste"
+
+[[keyboard.bindings]]
+key = "C"
+mods = "Control|Shift"
+action = "Copy"
+
+[[keyboard.bindings]]
+key = "Plus"
+mods = "Control"
+action = "IncreaseFontSize"
+
+[[keyboard.bindings]]
+key = "Minus"
+mods = "Control"
+action = "DecreaseFontSize"
+
+[[keyboard.bindings]]
+key = "Key0"
+mods = "Control"
+action = "ResetFontSize"

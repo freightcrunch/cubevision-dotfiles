@@ -50,6 +50,8 @@ dotfiles/
 ├── zsh/                  # Zsh shell config (zinit, p10k, aliases)
 │   ├── .zshrc
 │   └── .zshenv
+├── alacritty/            # Alacritty terminal emulator
+│   └── alacritty.toml
 ├── tmux/                 # Tmux terminal multiplexer
 │   └── tmux.conf
 ├── bspwm/                # bspwm window manager
