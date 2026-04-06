@@ -254,7 +254,7 @@ nanoclaw:
 		echo -e "$(YELLOW)[!]$(NC) OpenClaw already installed: $$(openclaw --version)"; \
 		echo "Upgrading to latest..."; \
 	fi
-	sudo npm install -g openclaw@latest
+	sudo env "PATH=$$(dirname $$(command -v node)):$$PATH" npm install -g openclaw@latest
 	@echo -e "$(GREEN)[✓]$(NC) OpenClaw $$(openclaw --version) installed"
 	@echo "  Run the full setup:  bash nanoclaw/setup-openclaw.sh"
 	@echo "  Or with Ollama:      bash nanoclaw/setup-openclaw.sh --with-ollama"

@@ -58,7 +58,11 @@ install_openclaw() {
         info "Upgrading to latest..."
     fi
 
-    sudo npm install -g openclaw@latest
+    # Use the current user's node/npm (e.g. fnm-managed) even under sudo,
+    # since the system Node.js may be too old for OpenClaw's postinstall scripts.
+    local node_bin
+    node_bin="$(dirname "$(command -v node)")"
+    sudo env "PATH=$node_bin:$PATH" npm install -g openclaw@latest
     info "OpenClaw $(openclaw --version) installed"
 }
 

@@ -121,6 +121,7 @@ openclaw --version
 - **Out of memory**: Use smaller models (`qwen3:1.7b` over `8b`), disable compositor
 - **Port conflict**: Change port in `openclaw.json` or service file
 - **Permission denied**: Check `/opt/openclaw/data` ownership is `openclawuser:openclawuser`
+- **SyntaxError: Unexpected token '?'** during `npm install -g`: The system Node.js is too old. `sudo` doesn't inherit fnm-managed Node. The install scripts already pass the correct PATH to sudo, but if running manually use: `sudo env "PATH=$(dirname $(command -v node)):$PATH" npm install -g openclaw@latest`
 
 ## References
 
