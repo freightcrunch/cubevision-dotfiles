@@ -264,6 +264,36 @@ install_nanoclaw() {
     info "See nanoclaw/README.md for full documentation."
 }
 
+# ─── Neovim (LazyVim) ────────────────────────────────────────────
+install_nvim() {
+    section "Neovim (LazyVim)"
+
+    # Ensure neovim is installed
+    if ! command -v nvim &>/dev/null; then
+        warn "Neovim not found. Installing via apt..."
+        sudo apt-get install -y -qq neovim
+    fi
+
+    local nvim_ver
+    nvim_ver=$(nvim --version | head -1 | grep -oP '[0-9]+\.[0-9]+')
+    info "Neovim version: $nvim_ver"
+
+    # LazyVim requires Neovim >= 0.9.0
+    local major minor
+    major=$(echo "$nvim_ver" | cut -d. -f1)
+    minor=$(echo "$nvim_ver" | cut -d. -f2)
+    if [ "$major" -eq 0 ] && [ "$minor" -lt 9 ]; then
+        warn "LazyVim requires Neovim 0.9+. Consider installing from https://github.com/neovim/neovim/releases"
+    fi
+
+    # Symlink the entire nvim config directory
+    symlink "$DOTFILES/nvim" "$HOME/.config/nvim"
+
+    info "LazyVim config installed."
+    info "On first launch, lazy.nvim will bootstrap and install all plugins."
+    info "Run :checkhealth after first launch to verify."
+}
+
 # ─── Git config ─────────────────────────────────────────────────
 install_git() {
     section "Git Configuration"
@@ -285,7 +315,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --nanoclaw]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --pytorch | --nanoclaw]"
     echo "  No arguments = install everything"
 }
 
@@ -305,6 +335,7 @@ main() {
         install_bspwm
         install_rust
         install_python
+        install_nvim
         install_js
         install_pytorch
         install_nanoclaw
@@ -317,6 +348,7 @@ main() {
                 --bspwm)    install_bspwm ;;
                 --rust)     install_rust ;;
                 --python)   install_python ;;
+                --nvim)     install_nvim ;;
                 --js)       install_js ;;
                 --pytorch)  install_pytorch ;;
                 --nanoclaw) install_nanoclaw ;;
@@ -335,8 +367,9 @@ main() {
     echo "║  1. Log out and back in (or run: exec zsh)                   ║"
     echo "║  2. Run 'p10k configure' to set up your prompt              ║"
     echo "║  3. Select bspwm from your display manager                   ║"
-    echo "║  4. Run the PyTorch installer when ready                     ║"
-    echo "║  5. Run nanoclaw/setup-openclaw.sh for AI gateway             ║"
+    echo "║  4. Open nvim — LazyVim will auto-bootstrap plugins          ║"
+    echo "║  5. Run the PyTorch installer when ready                     ║"
+    echo "║  6. Run nanoclaw/setup-openclaw.sh for AI gateway             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 }
 

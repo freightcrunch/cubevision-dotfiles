@@ -21,7 +21,7 @@
  │   os ............... Ubuntu 22.04 LTS (aarch64)                                                              │
  │   wm ............... bspwm + polybar + picom                                                                 │
  │   shell ............ zsh + oh-my-zsh + p10k                                                                  │
- │   editor ........... neovim                                                                                  │
+ │   editor ........... neovim (lazyvim)                                                           │
  │   toolchain ........ rust · python · node                                                                    │
  │   ai ............... ollama + openclaw                                                                       │
  │                                                                                                              │
@@ -75,6 +75,18 @@ dotfiles/
 │   ├── npmrc
 │   ├── .eslintrc.json
 │   └── .prettierrc.json
+├── nvim/                 # Neovim config (LazyVim)
+│   ├── init.lua
+│   ├── lazyvim.json
+│   ├── stylua.toml
+│   └── lua/
+│       ├── config/
+│       │   ├── autocmds.lua
+│       │   ├── keymaps.lua
+│       │   ├── lazy.lua
+│       │   └── options.lua
+│       └── plugins/
+│           └── colorscheme.lua
 ├── ranger/               # Ranger file manager config
 │   ├── rc.conf
 │   ├── rifle.conf
@@ -147,6 +159,7 @@ chmod +x scripts/install.sh
 ./scripts/install.sh --bspwm     # just bspwm + sxhkd
 ./scripts/install.sh --rust      # rust toolchain + config
 ./scripts/install.sh --python    # pip, ruff config
+./scripts/install.sh --nvim      # neovim (LazyVim)
 ./scripts/install.sh --js        # nvm, npm, eslint, prettier
 ./scripts/install.sh --pytorch   # prints PyTorch install instructions
 ./scripts/install.sh --packages  # apt packages only
