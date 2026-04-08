@@ -16,7 +16,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
-.PHONY: all deps omz alacritty mold python node rust nanoclaw info clean
+.PHONY: all deps omz alacritty mold python node rust opencv nanoclaw info clean
 
 # ── Latest version targets (update these as needed) ───────────────────
 PYTHON_VERSION   := 3.13
@@ -243,6 +243,20 @@ rust:
 			echo 'rustflags = ["-C", "link-arg=-fuse-ld=mold"]' >> "$$HOME/.cargo/config.toml"; \
 			echo -e "$(GREEN)[✓]$(NC) Cargo configured to use mold linker"; \
 		fi; \
+	fi
+
+# =====================================================================
+#  opencv — OpenCV with CUDA from source (latest: 4.13.0)
+# =====================================================================
+opencv:
+	@echo -e "$(BLUE)━━━ OpenCV (CUDA build) ━━━$(NC)"
+	@DOTFILES="$$(cd "$$(dirname $$0)/.." 2>/dev/null && pwd || cd .. && pwd)"; \
+	if [ -f "$$DOTFILES/opencv/setup-opencv-jetson.sh" ]; then \
+		chmod +x "$$DOTFILES/opencv/setup-opencv-jetson.sh"; \
+		bash "$$DOTFILES/opencv/setup-opencv-jetson.sh"; \
+	else \
+		echo -e "$(RED)[✗]$(NC) opencv/setup-opencv-jetson.sh not found"; \
+		echo "  Run from the dotfiles root: bash opencv/setup-opencv-jetson.sh"; \
 	fi
 
 # =====================================================================

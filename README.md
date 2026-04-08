@@ -91,6 +91,8 @@ dotfiles/
 │   ├── rc.conf
 │   ├── rifle.conf
 │   └── scope.sh
+├── opencv/               # OpenCV with CUDA (Jetson build)
+│   └── setup-opencv-jetson.sh
 ├── pytorch/              # PyTorch/TorchVision Jetson installer
 │   ├── setup-pytorch-jetson.sh
 │   └── torch-test.py
@@ -161,6 +163,7 @@ chmod +x scripts/install.sh
 ./scripts/install.sh --python    # pip, ruff config
 ./scripts/install.sh --nvim      # neovim (LazyVim)
 ./scripts/install.sh --js        # nvm, npm, eslint, prettier
+./scripts/install.sh --opencv    # OpenCV with CUDA build instructions
 ./scripts/install.sh --pytorch   # prints PyTorch install instructions
 ./scripts/install.sh --packages  # apt packages only
 ```
@@ -301,6 +304,30 @@ bash neo4j/setup-neo4j.sh --apoc
 ```
 
 Browser UI at `http://127.0.0.1:7474`, Bolt at `bolt://127.0.0.1:7687`. Heap capped at 1 GB, page cache at 512 MB. See `neo4j/README.md`.
+
+## OpenCV on Jetson
+
+The stock apt OpenCV (4.5.4) has **no CUDA support**. This script builds OpenCV 4.13.0 from source with CUDA, cuDNN, GStreamer, and V4L2:
+
+```bash
+# Full build (~1-2 hours on Orin Nano)
+bash opencv/setup-opencv-jetson.sh
+
+# Remove old apt OpenCV first
+bash opencv/setup-opencv-jetson.sh --remove-old
+
+# Reduce parallel jobs if hitting OOM
+MAKE_JOBS=2 bash opencv/setup-opencv-jetson.sh
+
+# Or via Makefile
+cd host/ && make opencv
+```
+
+Based on [AastaNV/JEP](https://github.com/AastaNV/JEP). Uses `CUDA_ARCH_BIN=8.7` (Ampere, Orin Nano). Verify after install:
+
+```bash
+python3 -c "import cv2; print(cv2.__version__); print('CUDA devices:', cv2.cuda.getCudaEnabledDeviceCount())"
+```
 
 ## PyTorch on Jetson
 

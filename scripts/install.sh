@@ -235,6 +235,22 @@ install_js() {
     info "JavaScript config installed."
 }
 
+# ─── OpenCV ───────────────────────────────────────────────────────
+install_opencv() {
+    section "OpenCV (Jetson CUDA build)"
+
+    chmod +x "$DOTFILES/opencv/setup-opencv-jetson.sh"
+    info "OpenCV setup script ready at:"
+    info "  $DOTFILES/opencv/setup-opencv-jetson.sh"
+    info ""
+    info "Run it manually when you're ready (builds from source, ~1-2 hours):"
+    info "  bash $DOTFILES/opencv/setup-opencv-jetson.sh"
+    info "  bash $DOTFILES/opencv/setup-opencv-jetson.sh --remove-old   # purge apt OpenCV first"
+    info ""
+    info "Adjust parallel jobs for RAM constraints:"
+    info "  MAKE_JOBS=2 bash $DOTFILES/opencv/setup-opencv-jetson.sh"
+}
+
 # ─── PyTorch ──────────────────────────────────────────────────────
 install_pytorch() {
     section "PyTorch / TorchVision (Jetson)"
@@ -315,7 +331,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --pytorch | --nanoclaw]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --opencv | --pytorch | --nanoclaw]"
     echo "  No arguments = install everything"
 }
 
@@ -337,6 +353,7 @@ main() {
         install_python
         install_nvim
         install_js
+        install_opencv
         install_pytorch
         install_nanoclaw
     else
@@ -350,6 +367,7 @@ main() {
                 --python)   install_python ;;
                 --nvim)     install_nvim ;;
                 --js)       install_js ;;
+                --opencv)   install_opencv ;;
                 --pytorch)  install_pytorch ;;
                 --nanoclaw) install_nanoclaw ;;
                 --git)      install_git ;;
@@ -368,8 +386,9 @@ main() {
     echo "║  2. Run 'p10k configure' to set up your prompt              ║"
     echo "║  3. Select bspwm from your display manager                   ║"
     echo "║  4. Open nvim — LazyVim will auto-bootstrap plugins          ║"
-    echo "║  5. Run the PyTorch installer when ready                     ║"
-    echo "║  6. Run nanoclaw/setup-openclaw.sh for AI gateway             ║"
+    echo "║  5. Run the OpenCV installer for CUDA support                ║"
+    echo "║  6. Run the PyTorch installer when ready                     ║"
+    echo "║  7. Run nanoclaw/setup-openclaw.sh for AI gateway             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 }
 
