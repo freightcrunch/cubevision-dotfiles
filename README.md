@@ -23,6 +23,7 @@
  │   shell ............ zsh + oh-my-zsh + p10k                                                                  │
  │   editor ........... neovim (lazyvim)                                                           │
  │   toolchain ........ rust · python · node                                                                    │
+ │   radar ........... TI AWR2944 (FMCW 76-81 GHz)                                                             │
  │   ai ............... ollama + openclaw                                                                       │
  │                                                                                                              │
  └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -93,6 +94,25 @@ dotfiles/
 │   └── scope.sh
 ├── opencv/               # OpenCV with CUDA (Jetson build)
 │   └── setup-opencv-jetson.sh
+├── awr2944/              # TI AWR2944 76-81 GHz radar dev environment
+│   ├── README.md
+│   ├── scripts/
+│   │   ├── bootstrap-linux-arm64.sh
+│   │   ├── bootstrap-macos.sh
+│   │   ├── build-firmware.sh
+│   │   ├── download-uniflash.sh
+│   │   ├── flash-uniflash.sh
+│   │   └── verify-env.sh
+│   ├── docker/
+│   │   ├── Dockerfile
+│   │   ├── docker-compose.yml
+│   │   ├── entrypoint.sh
+│   │   └── install-ti-sdk.sh
+│   ├── rust/              # Cargo workspace (host-capture, tlv-parser, firmware-r5f)
+│   ├── udev/
+│   │   └── 71-ti-xds110.rules
+│   ├── docs/              # 6 onboarding guides
+│   └── installers/        # (gitignored) TI SDK + compiler blobs
 ├── pytorch/              # PyTorch/TorchVision Jetson installer
 │   ├── setup-pytorch-jetson.sh
 │   └── torch-test.py
@@ -164,6 +184,7 @@ chmod +x scripts/install.sh
 ./scripts/install.sh --nvim      # neovim (LazyVim)
 ./scripts/install.sh --js        # nvm, npm, eslint, prettier
 ./scripts/install.sh --opencv    # OpenCV with CUDA build instructions
+./scripts/install.sh --awr2944   # TI AWR2944 radar dev environment
 ./scripts/install.sh --pytorch   # prints PyTorch install instructions
 ./scripts/install.sh --packages  # apt packages only
 ```
@@ -328,6 +349,34 @@ Based on [AastaNV/JEP](https://github.com/AastaNV/JEP). Uses `CUDA_ARCH_BIN=8.7`
 ```bash
 python3 -c "import cv2; print(cv2.__version__); print('CUDA devices:', cv2.cuda.getCudaEnabledDeviceCount())"
 ```
+
+## AWR2944 Radar Dev Environment
+
+Bootstrapped development environment for the **TI AWR2944** 76–81 GHz FMCW automotive radar SoC. Targets macOS hosts and arm64 Linux dev targets (Jetson, RPi 5, Ampere). Uses Docker to run TI's x86_64-only SDK toolchain via `qemu-user-static` on arm64.
+
+```bash
+# Bootstrap on Jetson / arm64 Linux (installs toolchains, Docker, Rust targets, udev rules)
+bash awr2944/scripts/bootstrap-linux-arm64.sh
+
+# Bootstrap on macOS (Homebrew, Docker Desktop, Rosetta 2, Rust)
+bash awr2944/scripts/bootstrap-macos.sh
+
+# Build the reproducible TI SDK Docker image
+cd awr2944/docker && docker compose build
+
+# Install TI MMWAVE-MCUPLUS-SDK inside the container
+# (first download installers from ti.com into awr2944/installers/)
+docker compose run --rm sdk /opt/scripts/install-ti-sdk.sh
+
+# Build firmware
+bash awr2944/scripts/build-firmware.sh ti mmw_demo   # TI C demo
+bash awr2944/scripts/build-firmware.sh rust           # Rust R5F firmware
+
+# Verify environment
+bash awr2944/scripts/verify-env.sh
+```
+
+Includes a Cargo workspace with `host-capture` (serial TLV decoder), `tlv-parser` (shared `no_std` wire format), and `firmware-r5f` (`armv7r-none-eabihf` skeleton). See `awr2944/README.md` and `awr2944/docs/` for full documentation.
 
 ## PyTorch on Jetson
 

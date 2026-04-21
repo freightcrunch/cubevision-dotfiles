@@ -1,0 +1,32 @@
+# ---- Rust ----
+rust/target/
+rust/**/target/
+**/*.rs.bk
+
+# ---- Python ----
+.venv/
+__pycache__/
+*.pyc
+
+# ---- TI installers (never commit — redistribution is not allowed) ----
+installers/*.run
+installers/*.bin
+installers/*.zip
+installers/*.exe
+installers/*.dmg
+
+# ---- Build output ----
+output/*.appimage
+output/*.appimage.hs
+output/*.bin
+output/*.xer5f
+output/*.xe66
+
+# ---- Docker volumes & build cache ----
+docker/**/*.log
+
+# ---- Editor / OS cruft ----
+.DS_Store
+*.swp
+.vscode/
+.idea/

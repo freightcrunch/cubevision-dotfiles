@@ -1,0 +1,49 @@
+# ============================================================================
+# docker-compose.yml — AWR2944 reproducible build env
+#
+# Usage from the repo root:
+#   cd docker
+#   # One-time: drop TI installers into ../installers/, then:
+#   docker compose build
+#   docker compose run --rm sdk /opt/scripts/install-ti-sdk.sh
+#   docker compose run --rm sdk          # interactive shell
+#
+# ============================================================================
+
+services:
+  sdk:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Force x86_64 even on arm64 hosts; TI's installer and TI-CGT are x86_64
+      # only. On arm64 Linux this relies on qemu-user-static (installed by
+      # bootstrap-linux-arm64.sh) or Docker Desktop's built-in emulation.
+      platforms:
+        - linux/amd64
+      args:
+        MMWAVE_SDK_VERSION: "04_07_00_01"
+        SYSCONFIG_VERSION: "1.21.0.3721"
+        TI_CGT_ARMLLVM_VERSION: "3.2.2.LTS"
+        GCC_ARM_VERSION: "13.2.rel1"
+    image: awr2944-sdk:latest
+    platform: linux/amd64
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      # Your repo — the only place the image writes deliverables.
+      - ../:/workspace
+      # TI installer drop zone (not committed to git; add to .gitignore).
+      - ../installers:/installers:ro
+      # Persist the installed SDK across container recreations.
+      - ti-sdk-cache:/ti
+      # Persist Rust target cache between runs for faster incremental builds.
+      - cargo-cache:/opt/cargo/registry
+    # Serial forwarding is only usable on Linux hosts; comment out on macOS.
+    # devices:
+    #   - /dev/ttyACM0:/dev/ttyACM0
+    #   - /dev/ttyACM1:/dev/ttyACM1
+
+volumes:
+  ti-sdk-cache:
+  cargo-cache:

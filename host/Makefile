@@ -16,7 +16,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
-.PHONY: all deps omz alacritty mold python node rust opencv nanoclaw info clean
+.PHONY: all deps omz alacritty mold python node rust opencv awr2944 nanoclaw info clean
 
 # ── Latest version targets (update these as needed) ───────────────────
 PYTHON_VERSION   := 3.13
@@ -257,6 +257,22 @@ opencv:
 	else \
 		echo -e "$(RED)[✗]$(NC) opencv/setup-opencv-jetson.sh not found"; \
 		echo "  Run from the dotfiles root: bash opencv/setup-opencv-jetson.sh"; \
+	fi
+
+# =====================================================================
+#  awr2944 — TI AWR2944 radar dev environment
+# =====================================================================
+awr2944:
+	@echo -e "$(BLUE)━━━ AWR2944 Radar Dev Environment ━━━$(NC)"
+	@DOTFILES="$$(cd "$$(dirname $$0)/.." 2>/dev/null && pwd || cd .. && pwd)"; \
+	if [ -f "$$DOTFILES/awr2944/scripts/bootstrap-linux-arm64.sh" ]; then \
+		chmod +x "$$DOTFILES/awr2944/scripts/"*.sh; \
+		echo -e "$(GREEN)[✓]$(NC) AWR2944 scripts ready at: $$DOTFILES/awr2944/"; \
+		echo "  Bootstrap:  bash $$DOTFILES/awr2944/scripts/bootstrap-linux-arm64.sh"; \
+		echo "  Verify:     bash $$DOTFILES/awr2944/scripts/verify-env.sh"; \
+		echo "  Docker SDK: cd $$DOTFILES/awr2944/docker && docker compose build"; \
+	else \
+		echo -e "$(RED)[✗]$(NC) awr2944/ directory not found"; \
 	fi
 
 # =====================================================================

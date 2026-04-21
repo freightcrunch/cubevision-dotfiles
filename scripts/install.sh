@@ -251,6 +251,42 @@ install_opencv() {
     info "  MAKE_JOBS=2 bash $DOTFILES/opencv/setup-opencv-jetson.sh"
 }
 
+# ─── AWR2944 (TI Radar) ───────────────────────────────────────────
+install_awr2944() {
+    section "AWR2944 Radar Dev Environment"
+
+    chmod +x "$DOTFILES/awr2944/scripts/"*.sh
+    chmod +x "$DOTFILES/awr2944/docker/entrypoint.sh"
+    chmod +x "$DOTFILES/awr2944/docker/install-ti-sdk.sh"
+
+    # Install udev rules for XDS110 + CP210x on Linux
+    if [ "$(uname -s)" = "Linux" ]; then
+        if [ ! -f /etc/udev/rules.d/71-ti-xds110.rules ]; then
+            info "Installing udev rules for TI XDS110 debug probe..."
+            sudo install -m 0644 "$DOTFILES/awr2944/udev/71-ti-xds110.rules" /etc/udev/rules.d/71-ti-xds110.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger
+            info "udev rules installed. Add user to dialout group: sudo usermod -aG dialout \$USER"
+        else
+            info "XDS110 udev rules already installed."
+        fi
+    fi
+
+    info "AWR2944 dev environment ready at:"
+    info "  $DOTFILES/awr2944/"
+    info ""
+    info "Bootstrap the full environment (installs toolchains, Docker, Rust targets):"
+    info "  bash $DOTFILES/awr2944/scripts/bootstrap-linux-arm64.sh   # Jetson / arm64 Linux"
+    info "  bash $DOTFILES/awr2944/scripts/bootstrap-macos.sh         # macOS host"
+    info ""
+    info "Then build the Docker SDK image and install TI tools:"
+    info "  cd $DOTFILES/awr2944/docker && docker compose build"
+    info "  docker compose run --rm sdk /opt/scripts/install-ti-sdk.sh"
+    info ""
+    info "Verify:  bash $DOTFILES/awr2944/scripts/verify-env.sh"
+    info "Docs:    $DOTFILES/awr2944/docs/"
+}
+
 # ─── PyTorch ──────────────────────────────────────────────────────
 install_pytorch() {
     section "PyTorch / TorchVision (Jetson)"
@@ -331,7 +367,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --opencv | --pytorch | --nanoclaw]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --opencv | --pytorch | --awr2944 | --nanoclaw]"
     echo "  No arguments = install everything"
 }
 
@@ -355,6 +391,7 @@ main() {
         install_js
         install_opencv
         install_pytorch
+        install_awr2944
         install_nanoclaw
     else
         for arg in "$@"; do
@@ -369,6 +406,7 @@ main() {
                 --js)       install_js ;;
                 --opencv)   install_opencv ;;
                 --pytorch)  install_pytorch ;;
+                --awr2944)  install_awr2944 ;;
                 --nanoclaw) install_nanoclaw ;;
                 --git)      install_git ;;
                 --help|-h)  usage; exit 0 ;;

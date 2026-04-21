@@ -1,0 +1,36 @@
+[package]
+name = "firmware-r5f"
+version = "0.1.0"
+edition = "2021"
+description = "Rust no_std skeleton for the AWR2944 Main Subsystem (Cortex-R5F MSS)."
+
+# This crate is *excluded* from the top-level workspace because Cargo has no
+# single target triple that satisfies both a host binary and a bare-metal
+# cross-compile. To build, run from this directory:
+#   cargo build --release
+# The .cargo/config.toml wires in the armv7r-none-eabihf target and the custom
+# linker script.
+
+[[bin]]
+name = "firmware-r5f"
+path = "src/main.rs"
+
+[profile.release]
+opt-level     = "s"
+lto           = true
+codegen-units = 1
+panic         = "abort"
+debug         = 2
+
+[profile.dev]
+opt-level = 1      # -O0 generates too many intrinsic calls missing from libgcc
+panic     = "abort"
+
+[dependencies]
+# Minimum set — we use panic-halt for the panic handler and write everything
+# else by hand. You can layer in `cortex-r` or aarch32-rt as the ecosystem
+# matures.
+panic-halt = "0.2"
+
+# Share the TLV wire-format with the host capture crate.
+tlv-parser = { path = "../tlv-parser", default-features = false }

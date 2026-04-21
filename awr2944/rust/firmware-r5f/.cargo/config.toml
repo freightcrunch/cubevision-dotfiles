@@ -1,0 +1,26 @@
+# Cargo cross-compile config for the AWR2944 Main Subsystem (MSS) Cortex-R5F.
+#
+# The AWR2944's MSS core is an Arm Cortex-R5F — armv7-r with an FPU (VFPv3-D16).
+# The matching Rust target is `armv7r-none-eabihf`.
+
+[build]
+target = "armv7r-none-eabihf"
+
+[target.armv7r-none-eabihf]
+# Force the linker to use our memory layout (memory.x) instead of the default
+# embedded defaults. Rust's `rust-lld` is used so we do NOT depend on the GNU
+# binutils being on PATH during the cargo build itself.
+rustflags = [
+    "-C", "link-arg=-Tmemory.x",
+    "-C", "link-arg=-Tlink.x",
+    "-C", "target-feature=+vfp3d16",
+    # cortex-r5f has a 64-bit data path but no 64-bit compare-and-swap, so tell
+    # the compiler to avoid atomic intrinsics that would reference libatomic.
+    "-C", "target-cpu=cortex-r5",
+]
+
+[unstable]
+# `build-std` lets us rebuild core/alloc for the target without prebuilt tier-2
+# artifacts. Comment out if you are on stable-only and have the target prebuilt.
+build-std = ["core", "alloc"]
+build-std-features = ["panic_immediate_abort"]

@@ -1,0 +1,33 @@
+# Cargo workspace for AWR2944 Rust components.
+#
+# The host-capture crate builds for the host triple (darwin-arm64, darwin-x86_64,
+# linux-arm64, linux-x86_64). The firmware-r5f crate is no_std and only builds
+# for armv7r-none-eabihf. The tlv-parser crate is `no_std + alloc`-optional and
+# is shared by both sides so the byte layout of mmW radar frames stays in sync.
+
+[workspace]
+resolver = "2"
+members = [
+    "host-capture",
+    "tlv-parser",
+    # firmware-r5f is excluded from the default build because it requires a
+    # cross-target; build it explicitly:
+    #   cargo build -p firmware-r5f --target armv7r-none-eabihf
+]
+exclude = ["firmware-r5f"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+authors = ["AWR2944 devkit team"]
+
+[workspace.dependencies]
+# Shared dependency versions pinned in one place.
+serialport    = "4.5"
+thiserror     = "1.0"
+clap          = { version = "4.5", features = ["derive"] }
+tracing       = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow        = "1.0"
+bytes         = "1.6"

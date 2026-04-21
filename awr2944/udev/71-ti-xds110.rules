@@ -1,0 +1,22 @@
+# ============================================================================
+# udev rules for the TI XDS110 debug probe and CP210x USB-to-UART bridge used
+# on the AWR2944EVM. Install to /etc/udev/rules.d/71-ti-xds110.rules and run:
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# After install, add your user to the 'dialout' and 'plugdev' groups:
+#   sudo usermod -aG dialout,plugdev $USER
+# ============================================================================
+
+# XDS110 debug probe (composite: JTAG + 2x CDC-ACM)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef4", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+# CDC-ACM interfaces exposed by the XDS110 → /dev/ttyACM*
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", MODE="0660", GROUP="dialout", SYMLINK+="ti_xds110_%n"
+
+# Silicon Labs CP210x bridge (some early AWR2944 EVMs shipped with it)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE="0660", GROUP="plugdev", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE="0660", GROUP="dialout", SYMLINK+="ti_cp210x_%n"
+
+# FTDI FT2232 bridge used on some AWR2944 companion boards (DCA1000-style capture)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", MODE="0660", GROUP="plugdev", TAG+="uaccess"
