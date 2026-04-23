@@ -1,0 +1,48 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  .wslconfig — WSL2 Resource Limits                                  ║
+# ║  Optimized for AMD Ryzen 7 260 (8c/16t) · 16 GB RAM                ║
+# ║                                                                      ║
+# ║  Location: %USERPROFILE%\.wslconfig                                  ║
+# ║  Apply changes: wsl --shutdown && wsl                                ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+[wsl2]
+# Allocate 10 GB to WSL2 (leave ~6 GB for Windows + overhead)
+memory=10GB
+
+# Use 12 of 16 logical processors (leave 4 for Windows responsiveness)
+processors=12
+
+# 4 GB swap backed by a virtual disk
+swap=4GB
+
+# Enable localhost forwarding (access WSL2 services from Windows)
+localhostForwarding=true
+
+# Nested virtualization (needed for Docker-in-WSL2)
+nestedVirtualization=true
+
+# Page reporting — return unused memory to Windows
+pageReporting=true
+
+# Limit VM idle timeout before reclaiming memory (seconds)
+vmIdleTimeout=60000
+
+# DNS tunneling for better network compatibility
+dnsTunneling=true
+
+# Use Windows firewall rules inside WSL2
+firewall=true
+
+# Network mode (NAT is default; mirrored shares host IP stack)
+# networkingMode=mirrored
+
+[experimental]
+# Auto memory reclaim: reclaim cached memory when free memory is low
+autoMemoryReclaim=gradual
+
+# Sparse VHD: dynamically shrink the WSL2 virtual disk
+sparseVhd=true
+
+# Auto proxy: use Windows proxy settings inside WSL2
+autoProxy=true
