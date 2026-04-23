@@ -116,6 +116,10 @@ dotfiles/
 ├── pytorch/              # PyTorch/TorchVision Jetson installer
 │   ├── setup-pytorch-jetson.sh
 │   └── torch-test.py
+├── mmwave/               # mmWave radar driver (RS-2944A / AWR2944)
+│   ├── README.md
+│   ├── 99-mmwave-radar.rules  # udev rules for CP2105 USB-UART
+│   └── setup-mmwave.sh        # Driver + deps installer
 ├── dev/                  # Nix flake dev environment
 │   ├── README.md
 │   ├── flake.nix
@@ -186,6 +190,7 @@ chmod +x scripts/install.sh
 ./scripts/install.sh --opencv    # OpenCV with CUDA build instructions
 ./scripts/install.sh --awr2944   # TI AWR2944 radar dev environment
 ./scripts/install.sh --pytorch   # prints PyTorch install instructions
+./scripts/install.sh --mmwave    # mmWave radar driver setup
 ./scripts/install.sh --packages  # apt packages only
 ```
 
@@ -325,6 +330,43 @@ bash neo4j/setup-neo4j.sh --apoc
 ```
 
 Browser UI at `http://127.0.0.1:7474`, Bolt at `bolt://127.0.0.1:7687`. Heap capped at 1 GB, page cache at 512 MB. See `neo4j/README.md`.
+
+## mmWave Radar (RS-2944A)
+
+Driver setup for the **D3 DesignCore RS-2944A** (TI AWR2944) 77 GHz mmWave radar sensor via the CP2105 USB-to-UART bridge.
+
+```bash
+# Full setup: kernel module, udev rules, dialout group, Python venv
+bash mmwave/setup-mmwave.sh
+
+# Check current driver state
+bash mmwave/setup-mmwave.sh --check
+
+# With ROS Melodic desktop-full (Docker) + ti_mmwave_rospkg
+bash mmwave/setup-mmwave.sh --ros
+
+# Custom Python venv path
+bash mmwave/setup-mmwave.sh --venv ~/.venvs/myradar
+```
+
+This will:
+1. Load the `cp210x` kernel module (Silicon Labs CP2105) and make it boot-persistent
+2. Install udev rules creating stable symlinks: `/dev/radar_cfg` and `/dev/radar_data`
+3. Add the user to the `dialout` group for serial port access
+4. Create a Python venv with `pyserial`, `numpy`, `websockets`, `scipy`
+5. (Optional) Build a Docker image with `ros-melodic-desktop-full` + [ti_mmwave_rospkg](https://github.com/radar-lab/ti_mmwave_rospkg)
+
+> **Note:** ROS Melodic targets Ubuntu 18.04 (Bionic) and cannot be installed natively on
+> Ubuntu 22.04. The `--ros` flag uses Docker with device passthrough for serial port access.
+
+After setup, verify:
+```bash
+lsusb | grep "10c4"           # CP2105 detected
+ls -la /dev/radar_*           # symlinks present
+screen /dev/radar_cfg 115200  # CLI access (Ctrl+A K to exit)
+```
+
+See `mmwave/README.md` for detailed hardware info, troubleshooting, and TI references.
 
 ## OpenCV on Jetson
 
@@ -475,6 +517,146 @@ bash scripts/fix-snap-browsers.sh --revert
 ```
 
 See: [NVIDIA Forum — Chromium broken on Jetson](https://forums.developer.nvidia.com/t/338891)
+
+---
+
+## Windows / WSL2 Development Machine
+
+A parallel set of configs for a **Windows + WSL2** workstation.
+
+### Hardware (Windows Host)
+
+| Spec       | Value                                    |
+|------------|------------------------------------------|
+| CPU        | AMD Ryzen 7 260 — 8 cores / 16 threads  |
+| Memory     | 16 GB DDR5                               |
+| GPU        | AMD Radeon 780M (iGPU)                   |
+| OS         | Windows 11                               |
+| Terminal   | WezTerm                                  |
+| Theme      | Nordic Night (Nord on #121212)           |
+
+### What's Included (Windows + WSL2)
+
+```
+windows/
+├── scoop-essentials.ps1     # Scoop package manager + NerdFonts + tools
+└── wezterm.lua              # WezTerm terminal (Nordic Night theme)
+wsl/
+├── .wslconfig               # WSL2 resource limits (10 GB / 12 cores)
+├── install.sh               # Full WSL2 environment setup
+├── zsh/
+│   ├── .zshrc               # Zsh config (zinit, p10k, Nordic FZF)
+│   └── .zshenv              # Environment variables (CUDA, .NET, Rust)
+├── nvim/                    # LazyVim + Nordic Night
+│   ├── init.lua
+│   └── lua/
+│       ├── config/
+│       │   ├── lazy.lua     # LazyVim bootstrap + extras
+│       │   ├── options.lua
+│       │   ├── keymaps.lua
+│       │   └── autocmds.lua
+│       └── plugins/
+│           ├── colorscheme.lua  # Nordic Night (AlexvZyl/nordic.nvim)
+│           ├── lsp.lua          # LSPs: TS, Python, Rust, C++, C#, etc.
+│           └── extras.lua       # GLSL, HLSL, WGSL, CUDA, ML plugins
+└── tmux/
+    └── tmux.conf            # Tmux with Nordic Night status bar
+vscode/
+├── extensions.json          # 50+ extensions (ML, shaders, CUDA, etc.)
+└── install-extensions.ps1   # Auto-install script for VS Code/Windsurf
+```
+
+### Quick Start (Windows)
+
+```powershell
+# 1. Install Scoop essentials (includes WezTerm, NerdFonts, runtimes)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+.\windows\scoop-essentials.ps1
+
+# 2. Install VS Code / Windsurf extensions
+.\vscode\install-extensions.ps1
+.\vscode\install-extensions.ps1 -Editor windsurf   # for Windsurf
+
+# 3. Install WSL2 Ubuntu
+wsl --install Ubuntu
+```
+
+### Quick Start (WSL2)
+
+```bash
+# Full setup: packages, zsh, neovim, rust, python, node, docker, CUDA
+bash wsl/install.sh
+
+# Or install specific modules
+bash wsl/install.sh --packages   # apt packages only
+bash wsl/install.sh --zsh        # zsh + zinit + p10k
+bash wsl/install.sh --nvim       # LazyVim + Nordic Night
+bash wsl/install.sh --rust       # Rust toolchain
+bash wsl/install.sh --python     # Python + ruff + uv
+bash wsl/install.sh --node       # Node.js via fnm
+bash wsl/install.sh --docker     # Docker CE + NVIDIA Container Toolkit
+bash wsl/install.sh --cuda       # CUDA toolkit + cuDNN + TensorRT
+bash wsl/install.sh --dotnet     # .NET SDK (C#)
+```
+
+### Color Scheme: Nordic Night
+
+Based on [Nordic Night](https://codeberg.org/ashton314/nordic-night) — the Nord palette on a darker `#121212` background for higher contrast. Applied consistently across:
+
+- **WezTerm** — terminal colors, tab bar, cursor
+- **Neovim** — via `AlexvZyl/nordic.nvim` with `#121212` overrides
+- **Tmux** — status bar, pane borders, messages
+- **Zsh/FZF** — selection colors, preview borders
+- **VS Code** — via `arcticicestudio.nord-visual-studio-code`
+
+### Fonts
+
+Installed via Scoop (`scoop bucket add nerd-fonts`):
+
+- **GeistMono Nerd Font** — primary (WezTerm, editor)
+- **SauceCodePro Nerd Font** — fallback (SourceCodePro NerdFont)
+- **Hack Nerd Font** — fallback
+
+### LSP Servers (Neovim)
+
+| Language   | Server                      |
+|------------|-----------------------------|
+| TypeScript | typescript-language-server   |
+| Python     | pyright + ruff              |
+| TailwindCSS| tailwindcss-language-server |
+| Rust       | rust-analyzer (via rustup)  |
+| C / C++    | clangd (with CUDA support)  |
+| C#         | omnisharp                   |
+| WGSL       | wgsl-analyzer               |
+| Docker     | dockerfile-language-server  |
+| Lua        | lua-language-server         |
+
+### VS Code Extensions Coverage
+
+- **Languages**: TypeScript, Python, Rust, C/C++, C#, TailwindCSS
+- **ML/AI**: Jupyter, Data Wrangler, Python snippets
+- **Shaders**: WGSL, HLSL, GLSL
+- **GPU**: NVIDIA Nsight (CUDA)
+- **DevOps**: Docker, Remote WSL, Remote Containers
+- **Git**: GitLens, Git Graph
+
+### WSL2 Performance Tuning
+
+The `.wslconfig` allocates resources based on the Ryzen 7 260:
+
+| Resource    | WSL2     | Windows  |
+|-------------|----------|----------|
+| RAM         | 10 GB    | ~6 GB    |
+| CPU threads | 12       | 4        |
+| Swap        | 4 GB     | —        |
+
+Features: `autoMemoryReclaim=gradual`, `sparseVhd=true`, `nestedVirtualization=true`.
+
+### CUDA on WSL2
+
+> **Note:** The current system has an AMD Radeon 780M (iGPU). CUDA requires an NVIDIA GPU.
+> The CUDA toolkit is included in the install script for when an NVIDIA GPU is added.
+> Install the [NVIDIA WSL2 driver](https://developer.nvidia.com/cuda/wsl) on the Windows side.
 
 ## License
 

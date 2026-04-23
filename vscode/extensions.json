@@ -1,0 +1,89 @@
+{
+  "recommendations": [
+    // ─── Remote / WSL ──────────────────────────────────────────────
+    "ms-vscode-remote.remote-wsl",
+    "ms-vscode-remote.remote-containers",
+
+    // ─── Theme (Nordic Night / Nord) ───────────────────────────────
+    "arcticicestudio.nord-visual-studio-code",
+
+    // ─── Node.js / TypeScript / JavaScript ─────────────────────────
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-vscode.js-debug-nightly",
+    "yoavbls.pretty-ts-errors",
+    "christian-kohler.npm-intellisense",
+    "christian-kohler.path-intellisense",
+
+    // ─── Python ────────────────────────────────────────────────────
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "ms-python.black-formatter",
+
+    // ─── TailwindCSS ──────────────────────────────────────────────
+    "bradlc.vscode-tailwindcss",
+
+    // ─── Rust ──────────────────────────────────────────────────────
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "serayuzgur.crates",
+    "tamasfe.even-better-toml",
+
+    // ─── C / C++ ──────────────────────────────────────────────────
+    "ms-vscode.cpptools",
+    "ms-vscode.cpptools-extension-pack",
+    "ms-vscode.cmake-tools",
+    "twxs.cmake",
+    "jeff-hykin.better-cpp-syntax",
+
+    // ─── C# / .NET ────────────────────────────────────────────────
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.csharp",
+    "ms-dotnettools.vscode-dotnet-runtime",
+
+    // ─── Machine Learning / Data Science ──────────────────────────
+    "ms-toolsai.jupyter",
+    "ms-toolsai.jupyter-keymap",
+    "ms-toolsai.jupyter-renderers",
+    "ms-toolsai.vscode-jupyter-cell-tags",
+    "ms-toolsai.vscode-jupyter-slideshow",
+    "ms-toolsai.datawrangler",
+
+    // ─── CUDA ─────────────────────────────────────────────────────
+    "nvidia.nsight-vscode-edition",
+
+    // ─── WGSL (WebGPU Shading Language) ───────────────────────────
+    "PolyMeilex.wgsl",
+
+    // ─── HLSL (DirectX Shading Language) ──────────────────────────
+    "TimGJones.hlsltools",
+
+    // ─── GLSL (OpenGL Shading Language) ───────────────────────────
+    "slevesque.shader",
+    "dtoplak.vscode-glsllint",
+
+    // ─── PyTorch / TorchVision ────────────────────────────────────
+    // (Covered by Python + Jupyter extensions above; add snippets:)
+    "cstrap.python-snippets",
+
+    // ─── Docker ───────────────────────────────────────────────────
+    "ms-azuretools.vscode-docker",
+
+    // ─── Git ──────────────────────────────────────────────────────
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+
+    // ─── General / Quality of Life ────────────────────────────────
+    "usernamehw.errorlens",
+    "streetsidesoftware.code-spell-checker",
+    "EditorConfig.EditorConfig",
+    "PKief.material-icon-theme",
+    "wayou.vscode-todo-highlight",
+    "gruntfuggly.todo-tree",
+    "naumovs.color-highlight",
+    "redhat.vscode-yaml",
+    "DavidAnson.vscode-markdownlint"
+  ]
+}

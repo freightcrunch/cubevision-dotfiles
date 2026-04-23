@@ -301,6 +301,22 @@ install_pytorch() {
     info "Smoke test available at: $DOTFILES/pytorch/torch-test.py"
 }
 
+# ─── mmWave Radar ────────────────────────────────────────────────
+install_mmwave() {
+    section "mmWave Radar (RS-2944A / AWR2944)"
+
+    chmod +x "$DOTFILES/mmwave/setup-mmwave.sh"
+    info "mmWave setup script ready at:"
+    info "  $DOTFILES/mmwave/setup-mmwave.sh"
+    info ""
+    info "Run it manually when you're ready:"
+    info "  bash $DOTFILES/mmwave/setup-mmwave.sh               # basic driver setup"
+    info "  bash $DOTFILES/mmwave/setup-mmwave.sh --ros         # with ROS Melodic (Docker)"
+    info "  bash $DOTFILES/mmwave/setup-mmwave.sh --check       # check current state"
+    info ""
+    info "See mmwave/README.md for full documentation."
+}
+
 # ─── NanoClaw (OpenClaw) ────────────────────────────────────────
 install_nanoclaw() {
     section "NanoClaw (OpenClaw)"
@@ -367,6 +383,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nanoclaw]"
     echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --nvim | --rust | --python | --js | --opencv | --pytorch | --awr2944 | --nanoclaw]"
     echo "  No arguments = install everything"
 }
@@ -391,6 +408,7 @@ main() {
         install_js
         install_opencv
         install_pytorch
+        install_mmwave
         install_awr2944
         install_nanoclaw
     else
@@ -406,6 +424,7 @@ main() {
                 --js)       install_js ;;
                 --opencv)   install_opencv ;;
                 --pytorch)  install_pytorch ;;
+                --mmwave)   install_mmwave ;;
                 --awr2944)  install_awr2944 ;;
                 --nanoclaw) install_nanoclaw ;;
                 --git)      install_git ;;
@@ -423,6 +442,9 @@ main() {
     echo "║  1. Log out and back in (or run: exec zsh)                   ║"
     echo "║  2. Run 'p10k configure' to set up your prompt              ║"
     echo "║  3. Select bspwm from your display manager                   ║"
+    echo "║  4. Run the PyTorch installer when ready                     ║"
+    echo "║  5. Run mmwave/setup-mmwave.sh for radar driver              ║"
+    echo "║  6. Run nanoclaw/setup-openclaw.sh for AI gateway             ║"
     echo "║  4. Open nvim — LazyVim will auto-bootstrap plugins          ║"
     echo "║  5. Run the OpenCV installer for CUDA support                ║"
     echo "║  6. Run the PyTorch installer when ready                     ║"

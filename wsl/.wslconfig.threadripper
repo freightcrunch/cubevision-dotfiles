@@ -1,0 +1,52 @@
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  .wslconfig — WSL2 Resource Limits                                  ║
+# ║  Optimized for AMD Threadripper PRO 5995WX (64c/128t) · ≥128 GB    ║
+# ║                                                                      ║
+# ║  Location: %USERPROFILE%\.wslconfig                                  ║
+# ║  Apply changes: wsl --shutdown && wsl                                ║
+# ║                                                                      ║
+# ║  To use: copy this file over .wslconfig on the Threadripper host     ║
+# ║    copy wsl\.wslconfig.threadripper %USERPROFILE%\.wslconfig         ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+[wsl2]
+# Allocate 192 GB to WSL2 (leave ~64 GB for Windows + overhead)
+# Adjust if your system has less RAM (e.g. 96GB → set to 72GB)
+memory=192GB
+
+# Use 112 of 128 logical processors (leave 16 for Windows responsiveness)
+processors=112
+
+# 32 GB swap — generous for large model finetuning spilling to disk
+swap=32GB
+
+# Enable localhost forwarding (access WSL2 services from Windows)
+localhostForwarding=true
+
+# Nested virtualization (needed for Docker-in-WSL2)
+nestedVirtualization=true
+
+# Page reporting — return unused memory to Windows
+pageReporting=true
+
+# Limit VM idle timeout before reclaiming memory (seconds)
+vmIdleTimeout=60000
+
+# DNS tunneling for better network compatibility
+dnsTunneling=true
+
+# Use Windows firewall rules inside WSL2
+firewall=true
+
+# Network mode (mirrored recommended on workstation for GPU passthrough stability)
+# networkingMode=mirrored
+
+[experimental]
+# Auto memory reclaim: reclaim cached memory when free memory is low
+autoMemoryReclaim=gradual
+
+# Sparse VHD: dynamically shrink the WSL2 virtual disk
+sparseVhd=true
+
+# Auto proxy: use Windows proxy settings inside WSL2
+autoProxy=true

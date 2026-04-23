@@ -1,0 +1,37 @@
+# ─── udev rules for TI mmWave radar sensors (CP2105 USB-to-UART bridge) ───
+#
+# Silicon Labs CP2105 dual USB-to-UART bridge
+#   Vendor:  10c4 (Silicon Laboratories)
+#   Product: ea70 (CP2105 Dual UART Bridge)
+#
+# Supported boards:
+#   - D3 DesignCore RS-2944A (AWR2944)
+#   - TI IWR6843 / IWR6843AOP EVM
+#   - TI AWR1843 / AWR1843AOP EVM
+#   - TI AWR1642 / AWR1443 EVM (standalone, not ICBOOST carrier)
+#
+# Creates persistent symlinks:
+#   /dev/mmWave_<serial>_00  →  config/command port (115200 baud)
+#   /dev/mmWave_<serial>_01  →  data port (921600 baud)
+#
+# Also creates convenience aliases for the RS-2944A:
+#   /dev/radar_cfg   →  first CP2105 interface 0 (config)
+#   /dev/radar_data  →  first CP2105 interface 1 (data)
+#
+# Install:
+#   sudo cp 99-mmwave-radar.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Verify:
+#   ls -la /dev/mmWave_* /dev/radar_*
+# ──────────────────────────────────────────────────────────────────────────
+
+# Per-serial-number symlinks (supports multiple sensors)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea70", SYMLINK+="mmWave_%s{serial}_%E{ID_USB_INTERFACE_NUM}"
+
+# Convenience aliases for single-sensor setups (RS-2944A)
+# Interface 00 = config/CLI port (115200)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea70", ENV{ID_USB_INTERFACE_NUM}=="00", SYMLINK+="radar_cfg", MODE="0666"
+
+# Interface 01 = high-speed data port (921600)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea70", ENV{ID_USB_INTERFACE_NUM}=="01", SYMLINK+="radar_data", MODE="0666"

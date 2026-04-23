@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LGUG2Z/komorebi/v0.1.40/schema.bar.json",
+  "font_family": "GeistMono Nerd Font",
+  "font_size": 14,
+  "color_overrides": {
+    "Base00": "#121212",
+    "Base01": "#1E1E2E",
+    "Base02": "#3B4252",
+    "Base03": "#4C566A",
+    "Base04": "#D8DEE9",
+    "Base05": "#E5E9F0",
+    "Base06": "#ECEFF4",
+    "Base07": "#8FBCBB",
+    "Base08": "#BF616A",
+    "Base09": "#D08770",
+    "Base0A": "#EBCB8B",
+    "Base0B": "#A3BE8C",
+    "Base0C": "#88C0D0",
+    "Base0D": "#81A1C1",
+    "Base0E": "#B48EAD",
+    "Base0F": "#5E81AC"
+  },
+  "theme": {
+    "palette": "Base16",
+    "name": "Nord",
+    "accent": "Base0D"
+  },
+  "left_widgets": [
+    {
+      "Komorebi": {
+        "workspaces": {
+          "enable": true,
+          "hide_empty_workspaces": false
+        },
+        "layout": {
+          "enable": true
+        },
+        "focused_window": {
+          "enable": true,
+          "show_icon": true
+        }
+      }
+    }
+  ],
+  "right_widgets": [
+    {
+      "Update": {
+        "enable": true
+      }
+    },
+    {
+      "Media": {
+        "enable": false
+      }
+    },
+    {
+      "Storage": {
+        "enable": true
+      }
+    },
+    {
+      "Memory": {
+        "enable": true
+      }
+    },
+    {
+      "Network": {
+        "enable": false,
+        "show_activity": true,
+        "show_total_activity": true
+      }
+    },
+    {
+      "Date": {
+        "enable": true,
+        "format": "DayDateMonthYear"
+      }
+    },
+    {
+      "Time": {
+        "enable": true,
+        "format": "TwentyFourHour"
+      }
+    },
+    {
+      "Battery": {
+        "enable": true
+      }
+    }
+  ]
+}

@@ -49,7 +49,20 @@ In jtop, press right arrow to reach the **INFO** tab. Confirm:
 - **TensorRT**: 10.x
 - **OpenCV**: 4.x (with CUDA)
 
-## 5. Alias
+## 5. Patch — JetPack "Not Installed" Fix
+
+If the INFO tab shows **JetPack: Not installed** despite `dpkg -l nvidia-jetpack`
+confirming it is present, the installed jetson-stats version is missing your L4T
+release from its lookup table. Apply the patch:
+
+```bash
+sudo bash ~/work/CascadeProjects/dotfiles/scripts/patch-jtop-jetpack.sh
+```
+
+The script is idempotent — safe to re-run after `pip3 install -U jetson-stats`.
+To add future L4T versions, edit the `PATCHES` map in the script.
+
+## 6. Alias
 
 Already in dotfiles `.zshrc`:
 
