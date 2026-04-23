@@ -1,0 +1,41 @@
+# Force LF for anything that must run under bash / Linux / WSL.
+# Windows-native scripts stay CRLF.
+
+* text=auto eol=lf
+
+# Shell & Unix-config files — always LF.
+*.sh         text eol=lf
+*.bash       text eol=lf
+*.zsh        text eol=lf
+*.zshrc      text eol=lf
+*.zshenv     text eol=lf
+.zshrc       text eol=lf
+.zshenv      text eol=lf
+.tmux.conf   text eol=lf
+*.conf       text eol=lf
+*.lua        text eol=lf
+Makefile     text eol=lf
+*.mk         text eol=lf
+
+# Windows-native scripts — keep CRLF.
+*.ps1        text eol=crlf
+*.psm1       text eol=crlf
+*.psd1       text eol=crlf
+*.cmd        text eol=crlf
+*.bat        text eol=crlf
+
+# Binary blobs — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.pdf binary

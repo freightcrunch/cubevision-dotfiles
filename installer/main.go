@@ -454,6 +454,67 @@ func findDotfiles() string {
 	return d
 }
 
+// toWSLPath converts a Windows path like `C:\Users\hi\foo\bar` into the
+// WSL-visible path `/mnt/c/Users/hi/foo/bar`. Non-Windows paths are
+// returned unchanged.
+func toWSLPath(p string) string {
+	// Normalize separators first.
+	p = filepath.ToSlash(p)
+	// Drive-letter form: `C:/Users/...`
+	if len(p) >= 2 && p[1] == ':' {
+		drive := strings.ToLower(string(p[0]))
+		rest := p[2:]
+		if !strings.HasPrefix(rest, "/") {
+			rest = "/" + rest
+		}
+		return "/mnt/" + drive + rest
+	}
+	return p
+}
+
+// buildInvocation returns the command name, args, and a human-readable
+// label describing how install.sh will be launched. On Windows it
+// dispatches through `wsl.exe bash <linux-path>` so the script runs
+// inside the user's WSL2 distro (where apt-get, sudo, etc. exist).
+func buildInvocation(script, dotfiles string, flags []string) (string, []string, string, error) {
+	if runtime.GOOS == "windows" {
+		wslExe, err := exec.LookPath("wsl.exe")
+		if err != nil {
+			return "", nil, "", fmt.Errorf(
+				"wsl.exe not found on PATH. Install WSL2 (`wsl --install`) or run `bash installer/run.sh` from inside a WSL shell")
+		}
+		linuxScript := toWSLPath(script)
+		linuxDotfiles := toWSLPath(dotfiles)
+		// Pass DOTFILES through explicitly because install.sh's own
+		// `cd "$(dirname "$0")/.."` would otherwise resolve relative
+		// to the Linux mount path — which is what we want, but being
+		// explicit avoids surprises if the user moves the repo.
+		bashCmd := fmt.Sprintf("DOTFILES=%s bash %s %s",
+			shellQuote(linuxDotfiles),
+			shellQuote(linuxScript),
+			joinQuoted(flags))
+		args := []string{"--", "bash", "-lc", bashCmd}
+		label := "wsl bash install.sh"
+		return wslExe, args, label, nil
+	}
+	args := append([]string{script}, flags...)
+	return "bash", args, "bash install.sh", nil
+}
+
+// shellQuote wraps a string in single quotes for POSIX shells, escaping
+// any embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func joinQuoted(xs []string) string {
+	out := make([]string, len(xs))
+	for i, x := range xs {
+		out[i] = shellQuote(x)
+	}
+	return strings.Join(out, " ")
+}
+
 // ─── Main ─────────────────────────────────────────────────────────
 
 func main() {
@@ -491,14 +552,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Decide how to invoke install.sh. On Windows the script is a
+	// Linux-only bash script targeting WSL2 (uses apt-get, sudo, etc),
+	// so we must dispatch to wsl.exe rather than Git Bash / MSYS bash.
+	invokeName, invokeArgs, launcherLabel, err := buildInvocation(script, dotfiles, flags)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", errStyle.Render("✗"), err)
+		os.Exit(1)
+	}
+
 	// Print summary line
-	fmt.Printf("\n%s %s  ⟶  bash install.sh %s\n\n",
+	fmt.Printf("\n%s %s  ⟶  %s %s\n\n",
 		okStyle.Render("━━━"),
 		profiles[final.profileIdx].name,
+		launcherLabel,
 		strings.Join(flags, " "))
 
 	// Execute install.sh with full terminal I/O
-	cmd := exec.Command("bash", append([]string{script}, flags...)...)
+	cmd := exec.Command(invokeName, invokeArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
