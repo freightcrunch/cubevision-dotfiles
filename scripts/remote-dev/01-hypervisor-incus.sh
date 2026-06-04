@@ -13,7 +13,7 @@ check_root() { [[ $EUID -eq 0 ]] || { echo "Run as root"; exit 1; }; }
 
 # --- Configuration ---
 STORAGE_POOL="dev-pool"
-STORAGE_DRIVER="zfs"           # Options: zfs, btrfs, dir, lvm
+STORAGE_DRIVER="btrfs"         # Options: zfs, btrfs, dir, lvm (btrfs works on WSL2; zfs module is absent there)
 BRIDGE_NAME="incusbr0"
 PROFILE_NAME="dev-vm"
 VM_CPUS=4
@@ -43,6 +43,11 @@ EOF
     apt-get update
     apt-get install -y incus incus-client
 
+    # btrfs storage driver needs mkfs.btrfs to format the loop-backed pool
+    if [[ "${STORAGE_DRIVER}" == "btrfs" ]]; then
+        apt-get install -y btrfs-progs
+    fi
+
     # Add current user to incus-admin group
     usermod -aG incus-admin "${SUDO_USER:-$USER}"
 
@@ -51,6 +56,11 @@ EOF
 
 initialize_incus() {
     print_header "Initializing Incus"
+
+    # btrfs storage driver needs mkfs.btrfs to format the loop-backed pool
+    if [[ "${STORAGE_DRIVER}" == "btrfs" ]] && ! command -v mkfs.btrfs &>/dev/null; then
+        apt-get install -y btrfs-progs
+    fi
 
     # Preseed configuration
     cat <<EOF | incus admin init --preseed

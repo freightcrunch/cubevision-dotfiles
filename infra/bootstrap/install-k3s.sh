@@ -20,9 +20,9 @@ error() { echo -e "${RED}[✗]${NC} $*" >&2; }
 header(){ echo -e "\n${BLUE}══════════════════════════════════════════${NC}"; echo -e "${BLUE}  $*${NC}"; echo -e "${BLUE}══════════════════════════════════════════${NC}"; }
 
 # --- Configuration ---
-K3S_VERSION="v1.31.4+k3s1"
-FLUX_VERSION="2.4.0"
-HELM_VERSION="v3.16.3"
+K3S_VERSION="v1.36.1+k3s1"
+FLUX_VERSION="2.8.8"
+HELM_VERSION="4.2.0"
 KUBECONFIG_PATH="/etc/rancher/k3s/k3s.yaml"
 
 # GitOps repo (this repo)
@@ -86,6 +86,45 @@ install_k3s() {
 
     info "K3s installed and running"
     kubectl get nodes --kubeconfig="${KUBECONFIG_PATH}"
+}
+
+# --- WSL2 workaround: strip Docker Desktop's malformed 9p mount ---
+# Docker Desktop's WSL integration adds a /Docker/host 9p mount whose options
+# contain an unescaped space ("C:\Program Files\..."), producing a /proc/mounts
+# line with 7 fields instead of 6. The kubelet's system validation chokes on
+# this and crash-loops with:
+#   "system validation failed - wrong number of fields (expected 6, got 7)"
+# Unmount it before k3s starts so the kubelet can parse /proc/mounts cleanly.
+patch_k3s_wsl() {
+    if ! grep -qiE '(microsoft|wsl)' /proc/version 2>/dev/null; then
+        return 0
+    fi
+
+    header "Applying WSL2 k3s workaround"
+
+    local dropin_dir="/etc/systemd/system/k3s.service.d"
+    local dropin="${dropin_dir}/wsl-umount.conf"
+
+    mkdir -p "${dropin_dir}"
+    cat > "${dropin}" <<'EOF'
+# Added by install-k3s.sh for WSL2.
+# Docker Desktop's /Docker/host 9p mount has an unescaped space in its options,
+# breaking the kubelet's /proc/mounts parser. Unmount it before k3s starts.
+# The leading '-' makes failure non-fatal (e.g. when the mount is absent).
+[Service]
+ExecStartPre=-/bin/umount /Docker/host
+EOF
+
+    systemctl daemon-reload
+
+    # Apply immediately if k3s is up but unhealthy from the bad mount.
+    if awk 'NF!=6' /proc/mounts | grep -q .; then
+        warn "Detected malformed /proc/mounts entry; unmounting /Docker/host"
+        umount /Docker/host 2>/dev/null || true
+        systemctl restart k3s 2>/dev/null || true
+    fi
+
+    info "WSL2 workaround installed (${dropin})"
 }
 
 # --- Configure kubeconfig for non-root user ---
@@ -208,6 +247,7 @@ install_extras() {
 main() {
     preflight
     install_k3s
+    patch_k3s_wsl
     setup_kubeconfig
     install_helm
     install_flux_cli

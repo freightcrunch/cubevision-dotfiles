@@ -21,26 +21,22 @@ spec:
   upgrade:
     remediation:
       retries: 3
+  # Token-based, dashboard-managed tunnel ("cubework").
+  # Ingress/public-hostname routes are configured in the Cloudflare
+  # Zero Trust dashboard, NOT here.
+  #
+  # The connector token is injected from the cloudflared-credentials
+  # secret (keeps it out of git). Create it with:
+  #   TOKEN=$(cloudflared tunnel token cubework)   # or copy from dashboard
+  #   kubectl create secret generic cloudflared-credentials \
+  #     --namespace=networking \
+  #     --from-literal=tunnel-token="$TOKEN"
+  valuesFrom:
+    - kind: Secret
+      name: cloudflared-credentials
+      valuesKey: tunnel-token
+      targetPath: cloudflare.tunnel_token
   values:
-    # Cloudflare Tunnel connector
-    # Create tunnel first:
-    #   cloudflared tunnel create build-server
-    #   cloudflared tunnel route dns build-server build.cubevision.dev
-    #
-    # Then create the secret:
-    #   kubectl create secret generic cloudflared-credentials \
-    #     --namespace=networking \
-    #     --from-file=credentials.json=$HOME/.cloudflared/<TUNNEL_ID>.json
-    cloudflare:
-      tunnelName: "build-server"
-      secretName: "cloudflared-credentials"
-      ingress:
-        - hostname: "build.cubevision.dev"
-          service: "http://grafana.monitoring.svc:80"
-        - hostname: "ci.cubevision.dev"
-          service: "http://tekton-dashboard.cicd.svc:9097"
-        - service: "http_status:404"
-
     replicaCount: 2
     resources:
       requests:

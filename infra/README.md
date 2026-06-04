@@ -103,11 +103,13 @@ kubectl create secret docker-registry ghcr-credentials \
   --docker-username=n-drw \
   --docker-password=ghp_XXXXXX
 
-# Cloudflare tunnel credentials
-cloudflared tunnel create build-server
+# Cloudflare tunnel credentials (dashboard-managed "cubework" tunnel)
+# Get the connector token from the Zero Trust dashboard
+# (Networks > Tunnels > cubework > Configure) or via the CLI:
+TOKEN=$(cloudflared tunnel token cubework)
 kubectl create secret generic cloudflared-credentials \
   --namespace=networking \
-  --from-file=credentials.json=$HOME/.cloudflared/<TUNNEL_ID>.json
+  --from-literal=tunnel-token="$TOKEN"
 
 # OpenVPN admin password
 kubectl create secret generic openvpn-admin \
