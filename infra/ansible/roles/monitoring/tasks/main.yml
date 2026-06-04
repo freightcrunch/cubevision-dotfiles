@@ -1,0 +1,76 @@
+---
+- name: Create monitoring namespace
+  ansible.builtin.command: >
+    kubectl create namespace monitoring
+    --dry-run=client -o yaml | kubectl apply -f -
+    --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+
+- name: Create apps namespace
+  ansible.builtin.command: >
+    kubectl create namespace apps
+    --dry-run=client -o yaml | kubectl apply -f -
+    --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+
+- name: Install node-exporter on build server
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+
+- name: Enable node-exporter service
+  ansible.builtin.systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+
+- name: Create Grafana admin secret
+  ansible.builtin.shell: |
+    kubectl create secret generic grafana-admin \
+      --namespace=monitoring \
+      --from-literal=admin-password={{ grafana_admin_password | default(lookup('password', '/dev/null length=24')) }} \
+      --dry-run=client -o yaml | \
+    kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+  no_log: true
+
+- name: Create OpenVPN admin secret
+  ansible.builtin.shell: |
+    kubectl create namespace networking --dry-run=client -o yaml | \
+      kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+    kubectl create secret generic openvpn-admin \
+      --namespace=networking \
+      --from-literal=username=admin \
+      --from-literal=password={{ openvpn_admin_password | default(lookup('password', '/dev/null length=24')) }} \
+      --dry-run=client -o yaml | \
+    kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+  no_log: true
+
+- name: Create GitHub webhook secret for Tekton
+  ansible.builtin.shell: |
+    kubectl create namespace cicd --dry-run=client -o yaml | \
+      kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+    kubectl create secret generic github-webhook-secret \
+      --namespace=cicd \
+      --from-literal=token={{ github_webhook_secret | default(lookup('password', '/dev/null length=40 chars=hexdigits')) }} \
+      --dry-run=client -o yaml | \
+    kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+  no_log: true
+
+- name: Verify network connectivity to local devices
+  ansible.builtin.command: "ping -c 1 -W 2 {{ hostvars[item].ansible_host }}"
+  loop: "{{ groups.get('network_devices', []) }}"
+  register: ping_results
+  changed_when: false
+  failed_when: false
+
+- name: Display device connectivity status
+  ansible.builtin.debug:
+    msg: >
+      {{ item.item }}: {{ 'REACHABLE' if item.rc == 0 else 'UNREACHABLE' }}
+      ({{ hostvars[item.item].ansible_host }})
+  loop: "{{ ping_results.results }}"
+  loop_control:
+    label: "{{ item.item }}"

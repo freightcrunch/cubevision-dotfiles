@@ -1,0 +1,64 @@
+---
+- name: Check if Tailscale is installed
+  ansible.builtin.command: tailscale --version
+  register: ts_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Tailscale
+  when: ts_installed.rc != 0
+  block:
+    - name: Download Tailscale install script
+      ansible.builtin.get_url:
+        url: https://tailscale.com/install.sh
+        dest: /tmp/tailscale-install.sh
+        mode: "0755"
+
+    - name: Run Tailscale installer
+      ansible.builtin.command: /tmp/tailscale-install.sh
+      changed_when: true
+
+    - name: Clean up installer
+      ansible.builtin.file:
+        path: /tmp/tailscale-install.sh
+        state: absent
+
+- name: Enable and start tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Check Tailscale status
+  ansible.builtin.command: tailscale status --json
+  register: ts_status
+  changed_when: false
+  failed_when: false
+
+- name: Authenticate Tailscale
+  ansible.builtin.command: >
+    tailscale up
+    --authkey={{ tailscale_auth_key }}
+    --ssh
+    --accept-dns
+    --hostname={{ inventory_hostname }}
+    {% if tailscale_advertise_routes is defined %}
+    --advertise-routes={{ tailscale_advertise_routes }}
+    {% endif %}
+    {% if tailscale_exit_node | default(false) %}
+    --advertise-exit-node
+    {% endif %}
+  when: >
+    ts_status.rc != 0 or
+    (ts_status.stdout | from_json).BackendState != "Running"
+  changed_when: true
+  no_log: true
+
+- name: Display Tailscale IP
+  ansible.builtin.command: tailscale ip -4
+  register: ts_ip
+  changed_when: false
+
+- name: Show Tailscale IP
+  ansible.builtin.debug:
+    msg: "Tailscale IP: {{ ts_ip.stdout }}"

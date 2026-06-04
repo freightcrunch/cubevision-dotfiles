@@ -1,0 +1,62 @@
+---
+- name: Check if cloudflared is installed
+  ansible.builtin.command: cloudflared --version
+  register: cf_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install cloudflared
+  when: cf_installed.rc != 0
+  block:
+    - name: Detect architecture for cloudflared
+      ansible.builtin.set_fact:
+        cf_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+
+    - name: Download cloudflared
+      ansible.builtin.get_url:
+        url: "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{{ cf_arch }}.deb"
+        dest: /tmp/cloudflared.deb
+        mode: "0644"
+
+    - name: Install cloudflared deb
+      ansible.builtin.apt:
+        deb: /tmp/cloudflared.deb
+        state: present
+
+    - name: Clean up
+      ansible.builtin.file:
+        path: /tmp/cloudflared.deb
+        state: absent
+
+- name: Create cloudflared config directory
+  ansible.builtin.file:
+    path: /etc/cloudflared
+    state: directory
+    mode: "0700"
+
+- name: Deploy tunnel credentials
+  ansible.builtin.copy:
+    src: tunnel-credentials.json
+    dest: /etc/cloudflared/credentials.json
+    mode: "0600"
+  notify: restart cloudflared
+  when: cloudflare_tunnel_token is defined
+
+- name: Create K8s namespace for cloudflared
+  ansible.builtin.command: >
+    kubectl create namespace networking
+    --kubeconfig=/etc/rancher/k3s/k3s.yaml
+    --dry-run=client -o yaml | kubectl apply -f -
+    --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+
+- name: Create cloudflared credentials secret in K8s
+  ansible.builtin.shell: |
+    kubectl create secret generic cloudflared-credentials \
+      --namespace=networking \
+      --from-file=credentials.json=/etc/cloudflared/credentials.json \
+      --dry-run=client -o yaml | \
+    kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+  no_log: true
+  when: cloudflare_tunnel_token is defined

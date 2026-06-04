@@ -1,0 +1,74 @@
+---
+# chatcli-operator — Custom Kubernetes operator for ChatCLI workloads
+# Deployed from a local/private Helm chart or OCI registry
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: chatcli
+  namespace: apps
+spec:
+  interval: 5m
+  type: oci
+  # Update this to your actual OCI registry
+  url: oci://ghcr.io/n-drw/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: chatcli-operator
+  namespace: apps
+spec:
+  interval: 15m
+  chart:
+    spec:
+      chart: chatcli-operator
+      version: "0.1.x"
+      sourceRef:
+        kind: HelmRepository
+        name: chatcli
+        namespace: apps
+      interval: 5m
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    replicaCount: 1
+
+    # Operator configuration
+    operator:
+      logLevel: info
+      metricsPort: 8080
+      healthPort: 8081
+
+    # Model inference backend
+    inference:
+      # Connect to Ollama running on the Threadripper workstation
+      backend: "ollama"
+      endpoint: "http://threadripper.local:11434"
+      # Or use a local model
+      # backend: "local"
+      # modelPath: "/models/llama3"
+
+    # Resources — operator is lightweight, inference is heavy
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    # ServiceMonitor for Prometheus scraping
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+      interval: 30s
+
+    # RBAC
+    rbac:
+      create: true

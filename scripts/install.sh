@@ -265,6 +265,100 @@ install_mmwave() {
     info "See mmwave/README.md for full documentation."
 }
 
+# ─── Infrastructure (OpenTofu, Ansible, K3s tools) ────────────
+install_infra() {
+    section "Infrastructure (OpenTofu + Ansible)"
+
+    # --- OpenTofu ---
+    if ! command -v tofu &>/dev/null; then
+        info "Installing OpenTofu..."
+        curl -fsSL https://get.opentofu.org/install-opentofu.sh -o /tmp/install-opentofu.sh
+        chmod +x /tmp/install-opentofu.sh
+        sudo /tmp/install-opentofu.sh --install-method deb 2>/dev/null || \
+        sudo /tmp/install-opentofu.sh --install-method standalone 2>/dev/null || {
+            warn "Auto-install failed. Installing via snap..."
+            sudo snap install opentofu --classic 2>/dev/null || \
+                warn "Could not install OpenTofu. Install manually: https://opentofu.org/docs/intro/install/"
+        }
+        rm -f /tmp/install-opentofu.sh
+    else
+        info "OpenTofu already installed: $(tofu --version | head -1)"
+    fi
+
+    # --- Ansible ---
+    if ! command -v ansible &>/dev/null; then
+        info "Installing Ansible..."
+        sudo apt-get install -y -qq software-properties-common 2>/dev/null || true
+        sudo add-apt-repository --yes --update ppa:ansible/ansible 2>/dev/null || true
+        sudo apt-get install -y -qq ansible 2>/dev/null || {
+            info "Falling back to pip install..."
+            pip install --user ansible ansible-lint
+        }
+    else
+        info "Ansible already installed: $(ansible --version | head -1)"
+    fi
+
+    # --- Ansible Galaxy collections ---
+    if [ -f "$DOTFILES/infra/ansible/requirements.yml" ]; then
+        info "Installing Ansible Galaxy collections..."
+        ansible-galaxy collection install -r "$DOTFILES/infra/ansible/requirements.yml" --force 2>/dev/null || \
+            warn "Could not install Ansible collections. Run manually:"
+            warn "  ansible-galaxy collection install -r infra/ansible/requirements.yml"
+    fi
+
+    # --- kubectl ---
+    if ! command -v kubectl &>/dev/null; then
+        info "Installing kubectl..."
+        local arch="amd64"
+        [[ "$(uname -m)" == "aarch64" ]] && arch="arm64"
+        curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/${arch}/kubectl" \
+            -o /tmp/kubectl
+        sudo install -o root -g root -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+        rm -f /tmp/kubectl
+    else
+        info "kubectl already installed: $(kubectl version --client --short 2>/dev/null || kubectl version --client | head -1)"
+    fi
+
+    # --- Helm ---
+    if ! command -v helm &>/dev/null; then
+        info "Installing Helm..."
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    else
+        info "Helm already installed: $(helm version --short)"
+    fi
+
+    # --- Flux CLI ---
+    if ! command -v flux &>/dev/null; then
+        info "Installing Flux CLI..."
+        curl -fsSL https://fluxcd.io/install.sh | bash
+    else
+        info "Flux already installed: $(flux --version)"
+    fi
+
+    # --- kustomize ---
+    if ! command -v kustomize &>/dev/null; then
+        info "Installing kustomize..."
+        curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
+        sudo mv kustomize /usr/local/bin/
+    else
+        info "kustomize already installed: $(kustomize version --short 2>/dev/null || kustomize version)"
+    fi
+
+    info ""
+    info "Infrastructure tools installed."
+    info "  OpenTofu: $(tofu --version 2>/dev/null | head -1 || echo 'not found')"
+    info "  Ansible:  $(ansible --version 2>/dev/null | head -1 || echo 'not found')"
+    info "  kubectl:  $(kubectl version --client --short 2>/dev/null || echo 'not found')"
+    info "  Helm:     $(helm version --short 2>/dev/null || echo 'not found')"
+    info "  Flux:     $(flux --version 2>/dev/null || echo 'not found')"
+    info ""
+    info "Next steps:"
+    info "  1. cd $DOTFILES/infra/terraform"
+    info "  2. cp env/build-server.tfvars.example env/build-server.tfvars"
+    info "  3. tofu init && tofu plan -var-file=env/build-server.tfvars"
+    info "  4. tofu apply -var-file=env/build-server.tfvars"
+}
+
 # ─── NanoClaw (OpenClaw) ────────────────────────────────────────
 install_nanoclaw() {
     section "NanoClaw (OpenClaw)"
@@ -301,7 +395,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nanoclaw]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nanoclaw | --infra]"
     echo "  No arguments = install everything"
 }
 
@@ -325,6 +419,7 @@ main() {
         install_pytorch
         install_mmwave
         install_nanoclaw
+        install_infra
     else
         for arg in "$@"; do
             case "$arg" in
@@ -338,6 +433,7 @@ main() {
                 --pytorch)  install_pytorch ;;
                 --mmwave)   install_mmwave ;;
                 --nanoclaw) install_nanoclaw ;;
+                --infra)    install_infra ;;
                 --git)      install_git ;;
                 --help|-h)  usage; exit 0 ;;
                 *)          error "Unknown option: $arg"; usage; exit 1 ;;

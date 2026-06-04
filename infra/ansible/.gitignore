@@ -1,0 +1,3 @@
+.ansible_cache/
+*.retry
+roles/cloudflared/files/tunnel-credentials.json

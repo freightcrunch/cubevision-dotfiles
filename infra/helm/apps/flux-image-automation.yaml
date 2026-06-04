@@ -1,0 +1,57 @@
+---
+# Flux Image Automation — automatically update image tags on new builds
+# This enables CD: when a new container image is pushed, Flux updates the manifests
+
+# Watch the container registry for new chatcli-operator images
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: chatcli-operator
+  namespace: apps
+spec:
+  image: ghcr.io/n-drw/chatcli-operator
+  interval: 5m
+  # If private registry:
+  # secretRef:
+  #   name: ghcr-credentials
+---
+# Policy: always use the latest semver tag
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImagePolicy
+metadata:
+  name: chatcli-operator
+  namespace: apps
+spec:
+  imageRepositoryRef:
+    name: chatcli-operator
+  policy:
+    semver:
+      range: ">=0.1.0"
+---
+# Auto-update: commit image tag changes back to git
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: flux-image-updater
+  namespace: flux-system
+spec:
+  interval: 30m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: fluxcdbot
+        email: flux@cubevision.dev
+      messageTemplate: |
+        chore(ci): update image {{ .Changed.Name }} to {{ .Changed.NewTag }}
+    push:
+      branch: main
+  update:
+    path: ./infra/helm/apps
+    strategy: Setters

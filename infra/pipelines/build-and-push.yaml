@@ -1,0 +1,208 @@
+---
+# Tekton Pipeline: Build container image and push to registry
+# Triggered by GitHub webhook via Tekton Triggers
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: build-and-push
+  namespace: cicd
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: Git repository URL
+    - name: revision
+      type: string
+      description: Git revision (branch/tag/commit)
+      default: main
+    - name: image-name
+      type: string
+      description: Full image name (registry/org/repo)
+    - name: dockerfile
+      type: string
+      default: Dockerfile
+    - name: context
+      type: string
+      default: "."
+
+  workspaces:
+    - name: source
+    - name: docker-credentials
+
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: source
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+
+    - name: run-tests
+      runAfter: [git-clone]
+      taskRef:
+        name: run-tests
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: build-push
+      runAfter: [run-tests]
+      taskRef:
+        name: kaniko
+        kind: ClusterTask
+      workspaces:
+        - name: source
+          workspace: source
+        - name: dockerconfig
+          workspace: docker-credentials
+      params:
+        - name: IMAGE
+          value: $(params.image-name):$(params.revision)
+        - name: DOCKERFILE
+          value: $(params.dockerfile)
+        - name: CONTEXT
+          value: $(params.context)
+        - name: EXTRA_ARGS
+          value:
+            - --cache=true
+            - --cache-ttl=24h
+
+---
+# Custom Task: run-tests
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: run-tests
+  namespace: cicd
+spec:
+  workspaces:
+    - name: source
+  steps:
+    - name: test
+      image: golang:1.23
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        echo "==> Detecting project type..."
+
+        if [[ -f "go.mod" ]]; then
+          echo "==> Go project detected"
+          go test ./... -v -race -coverprofile=coverage.out
+          go tool cover -func=coverage.out | tail -1
+        elif [[ -f "Cargo.toml" ]]; then
+          echo "==> Rust project detected"
+          cargo test --all
+        elif [[ -f "package.json" ]]; then
+          echo "==> Node.js project detected"
+          npm ci && npm test
+        elif [[ -f "requirements.txt" ]] || [[ -f "pyproject.toml" ]]; then
+          echo "==> Python project detected"
+          pip install -e ".[test]" 2>/dev/null || pip install -r requirements.txt
+          pytest -v
+        else
+          echo "==> No recognized project type, skipping tests"
+        fi
+
+---
+# TriggerTemplate: creates PipelineRun from webhook events
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: build-and-push-trigger
+  namespace: cicd
+spec:
+  params:
+    - name: git-repo-url
+    - name: git-revision
+    - name: image-name
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: build-push-
+      spec:
+        pipelineRef:
+          name: build-and-push
+        params:
+          - name: repo-url
+            value: $(tt.params.git-repo-url)
+          - name: revision
+            value: $(tt.params.git-revision)
+          - name: image-name
+            value: $(tt.params.image-name)
+        workspaces:
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 2Gi
+          - name: docker-credentials
+            secret:
+              secretName: ghcr-credentials
+
+---
+# EventListener: receives GitHub webhooks
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-webhook
+  namespace: cicd
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: push-to-main
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: github-webhook-secret
+                secretKey: token
+            - name: eventTypes
+              value: ["push"]
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: "body.ref == 'refs/heads/main'"
+      bindings:
+        - name: git-repo-url
+          value: $(body.repository.clone_url)
+        - name: git-revision
+          value: $(body.after)
+        - name: image-name
+          value: "ghcr.io/n-drw/$(body.repository.name)"
+      template:
+        ref: build-and-push-trigger
+
+---
+# ServiceAccount for Tekton Triggers
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-triggers-sa
+  namespace: cicd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-triggers-binding
+  namespace: cicd
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles

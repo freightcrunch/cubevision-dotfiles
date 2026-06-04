@@ -1,0 +1,51 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cloudflared
+  namespace: networking
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: cloudflare-tunnel-remote
+      version: "0.x"
+      sourceRef:
+        kind: HelmRepository
+        name: cloudflare
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # Cloudflare Tunnel connector
+    # Create tunnel first:
+    #   cloudflared tunnel create build-server
+    #   cloudflared tunnel route dns build-server build.cubevision.dev
+    #
+    # Then create the secret:
+    #   kubectl create secret generic cloudflared-credentials \
+    #     --namespace=networking \
+    #     --from-file=credentials.json=$HOME/.cloudflared/<TUNNEL_ID>.json
+    cloudflare:
+      tunnelName: "build-server"
+      secretName: "cloudflared-credentials"
+      ingress:
+        - hostname: "build.cubevision.dev"
+          service: "http://grafana.monitoring.svc:80"
+        - hostname: "ci.cubevision.dev"
+          service: "http://tekton-dashboard.cicd.svc:9097"
+        - service: "http_status:404"
+
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi

@@ -65,7 +65,7 @@ var profiles = []profileDef{
 		name:     "Ryzen 7 260",
 		desc:     "8c/16t · 16 GB · Radeon 780M (current machine)",
 		flag:     "ryzen",
-		deselect: []int{11, 12}, // ML, CUDA off by default (no NVIDIA GPU)
+		deselect: []int{12, 13}, // ML, CUDA off by default (no NVIDIA GPU)
 	},
 	{
 		name:     "Threadripper PRO 5995WX",
@@ -94,10 +94,11 @@ var modules = []moduleDef{
 	{"--python", "Python", "ruff, uv, pipx", "Languages"},
 	{"--node", "Node.js", "fnm, pnpm (corepack), typescript, eslint", "Languages"},
 	{"--dotnet", ".NET SDK", "C# / F# development via dotnet-install", "Languages"},
-	// Cloud & Infra (9-10)
+	// Cloud & Infra (9-11)
 	{"--cloud", "Cloud CLIs & DB", "Azure, AWS, Cloudflare, mssql-tools", "Cloud & Infrastructure"},
 	{"--docker", "Docker", "engine, compose, NVIDIA container toolkit", "Cloud & Infrastructure"},
-	// ML & Compute (11-12)
+	{"--infra", "Infra (OpenTofu + Ansible)", "OpenTofu, Ansible, kubectl, Helm, Flux, kustomize", "Cloud & Infrastructure"},
+	// ML & Compute (12-13)
 	{"--ml", "ML / Point Cloud", "PyTorch, transformers, Open3D, laspy, finetuning", "ML & Compute"},
 	{"--cuda", "CUDA Toolkit", "CUDA, cuDNN, TensorRT (requires NVIDIA GPU)", "ML & Compute"},
 }

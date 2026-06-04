@@ -1,0 +1,51 @@
+---
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  site.yml — Master playbook for CI/CD build server provisioning     ║
+# ║                                                                      ║
+# ║  Usage:                                                              ║
+# ║    ansible-playbook -i inventory/hosts.yml site.yml                  ║
+# ║    ansible-playbook -i inventory/hosts.yml site.yml --tags k3s       ║
+# ║    ansible-playbook -i inventory/hosts.yml site.yml --check --diff   ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+- name: Provision build server — common baseline
+  hosts: build_servers
+  become: true
+  tags: [common]
+  roles:
+    - common
+
+- name: Install Tailscale on build server
+  hosts: build_servers
+  become: true
+  tags: [tailscale]
+  roles:
+    - tailscale
+
+- name: Install K3s cluster
+  hosts: build_servers
+  become: true
+  tags: [k3s]
+  roles:
+    - k3s
+
+- name: Deploy Cloudflare Tunnel
+  hosts: build_servers
+  become: true
+  tags: [cloudflared]
+  roles:
+    - cloudflared
+
+- name: Bootstrap Flux GitOps
+  hosts: build_servers
+  become: true
+  tags: [flux]
+  roles:
+    - flux
+
+- name: Configure network monitoring probes
+  hosts: build_servers
+  become: true
+  tags: [monitoring]
+  roles:
+    - monitoring

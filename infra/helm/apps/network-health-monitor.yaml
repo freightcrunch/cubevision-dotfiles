@@ -1,0 +1,176 @@
+---
+# Network Health Monitor — CronJob + blackbox-exporter for local device monitoring
+# Monitors: Jetson Orin, AWR2944 Radar, Cameras, Build Server services
+
+# Blackbox Exporter for probe-based monitoring (ICMP, TCP, HTTP)
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: blackbox-exporter
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: prometheus-blackbox-exporter
+      version: "9.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 12h
+  values:
+    config:
+      modules:
+        # ICMP ping — check if device is alive
+        icmp_check:
+          prober: icmp
+          timeout: 5s
+          icmp:
+            preferred_ip_protocol: ip4
+
+        # TCP connect — check if port is reachable
+        tcp_connect:
+          prober: tcp
+          timeout: 5s
+
+        # HTTP probe — check service health
+        http_2xx:
+          prober: http
+          timeout: 10s
+          http:
+            valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+            valid_status_codes: [200, 204, 301, 302]
+            follow_redirects: true
+
+        # SSH check
+        ssh_banner:
+          prober: tcp
+          timeout: 5s
+          tcp:
+            query_response:
+              - expect: "^SSH-2.0-"
+
+    serviceMonitor:
+      enabled: true
+      defaults:
+        interval: 30s
+
+    # Probes for local network devices
+    # These are scraped by Prometheus via the ServiceMonitor
+    # Additional scrape config in prometheus-stack.yaml handles the actual probe targets
+
+---
+# PrometheusRule for alerting on device health
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: network-health-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: device-health
+      rules:
+        - alert: DeviceDown
+          expr: probe_success{job="blackbox-icmp"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Device {{ $labels.instance }} is unreachable"
+            description: "ICMP probe to {{ $labels.instance }} has failed for >2 minutes"
+
+        - alert: DeviceHighLatency
+          expr: probe_duration_seconds{job="blackbox-icmp"} > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High latency to {{ $labels.instance }}"
+            description: "ICMP latency to {{ $labels.instance }} is {{ $value }}s (>100ms for 5min)"
+
+        - alert: JetsonOrinUnreachable
+          expr: probe_success{instance=~".*jetson.*"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            device: jetson-orin
+          annotations:
+            summary: "Jetson Orin is unreachable"
+
+        - alert: RadarOffline
+          expr: probe_success{instance=~".*radar.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            device: awr2944
+          annotations:
+            summary: "AWR2944 Radar is offline"
+
+        - alert: CameraFeedDown
+          expr: probe_success{instance=~".*cam.*"} == 0
+          for: 1m
+          labels:
+            severity: warning
+            device: camera
+          annotations:
+            summary: "Camera {{ $labels.instance }} feed is down"
+
+    - name: service-health
+      rules:
+        - alert: OllamaDown
+          expr: probe_success{instance=~".*11434.*"} == 0
+          for: 3m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Ollama inference endpoint is down"
+
+        - alert: TektonControllerDown
+          expr: up{job="tekton-pipelines-controller"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Tekton CI/CD controller is down"
+
+---
+# ConfigMap with probe targets for blackbox exporter
+# Referenced by additionalScrapeConfigs in prometheus-stack
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blackbox-targets
+  namespace: monitoring
+data:
+  targets.yaml: |
+    # ICMP targets (ping)
+    - targets:
+        - jetson-orin.local
+        - radar.local
+        - cam-front.local
+        - cam-rear.local
+        - threadripper.local
+      labels:
+        job: blackbox-icmp
+        module: icmp_check
+
+    # TCP targets (port reachability)
+    - targets:
+        - jetson-orin.local:22
+        - threadripper.local:11434
+        - localhost:6443
+        - localhost:9090
+      labels:
+        job: blackbox-tcp
+        module: tcp_connect
+
+    # HTTP targets (service health)
+    - targets:
+        - http://jetson-orin.local:8080/health
+        - http://threadripper.local:11434/api/tags
+      labels:
+        job: blackbox-http
+        module: http_2xx

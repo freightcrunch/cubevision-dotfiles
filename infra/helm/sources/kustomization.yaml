@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helm-prometheus-community.yaml
+  - helm-cloudflare.yaml
+  - helm-openvpn.yaml
+  - helm-tekton.yaml
+  - helm-grafana.yaml
+  - helm-bitnami.yaml

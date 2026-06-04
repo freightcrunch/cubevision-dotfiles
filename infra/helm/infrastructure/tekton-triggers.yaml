@@ -1,0 +1,69 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tekton-triggers
+  namespace: cicd
+spec:
+  interval: 30m
+  dependsOn:
+    - name: tekton-pipelines
+  chart:
+    spec:
+      chart: tekton-triggers
+      version: "0.x"
+      sourceRef:
+        kind: HelmRepository
+        name: tekton
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    controller:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+
+    webhook:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+---
+# Tekton Dashboard for web UI
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tekton-dashboard
+  namespace: cicd
+spec:
+  interval: 30m
+  dependsOn:
+    - name: tekton-pipelines
+  chart:
+    spec:
+      chart: tekton-dashboard
+      version: "0.x"
+      sourceRef:
+        kind: HelmRepository
+        name: tekton
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  values:
+    service:
+      port: 9097
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi

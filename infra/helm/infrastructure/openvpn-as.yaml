@@ -1,0 +1,62 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: openvpn-as
+  namespace: networking
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: openvpn-as
+      version: "0.x"
+      sourceRef:
+        kind: HelmRepository
+        name: openvpn-as
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    # OpenVPN Access Server
+    # Provides VPN access to the local network (Jetson, radar, cameras)
+    replicaCount: 1
+
+    service:
+      type: LoadBalancer
+      ports:
+        admin: 943
+        tcp: 443
+        udp: 1194
+
+    persistence:
+      enabled: true
+      size: 1Gi
+
+    # Network routes to push to VPN clients
+    # These allow remote access to local devices
+    config:
+      vpn.server.routing.private_network.0: "10.100.0.0/24"   # Incus VMs
+      vpn.server.routing.private_network.1: "192.168.1.0/24"  # Local LAN (Jetson, radar, cameras)
+      vpn.daemon.0.listen.0.0.0.0.protocol: "tcp"
+      vpn.daemon.0.server.0.0.0.0.protocol: "udp"
+      auth.module.type: "local"
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    # Admin credentials — set via external Secret
+    # kubectl create secret generic openvpn-admin \
+    #   --namespace=networking \
+    #   --from-literal=username=admin \
+    #   --from-literal=password=<secure-password>
+    existingSecret: "openvpn-admin"

@@ -1,0 +1,75 @@
+---
+- name: Check if Flux CLI is installed
+  ansible.builtin.command: flux --version
+  register: flux_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Flux CLI
+  when: flux_installed.rc != 0
+  ansible.builtin.shell: |
+    curl -fsSL https://fluxcd.io/install.sh | bash
+  args:
+    creates: /usr/local/bin/flux
+
+- name: Run Flux pre-check
+  ansible.builtin.command: >
+    flux check --pre --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  register: flux_precheck
+  changed_when: false
+  failed_when: false
+
+- name: Display Flux pre-check results
+  ansible.builtin.debug:
+    msg: "{{ flux_precheck.stdout_lines }}"
+
+- name: Bootstrap Flux with GitHub
+  when: github_token | default('') | length > 0
+  environment:
+    GITHUB_TOKEN: "{{ github_token }}"
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  ansible.builtin.command: >
+    flux bootstrap github
+    --owner={{ github_owner }}
+    --repository={{ github_repository }}
+    --branch=main
+    --path=./infra/clusters/build-server
+    --personal
+    --components-extra=image-reflector-controller,image-automation-controller
+  register: flux_bootstrap
+  changed_when: "'configured' in flux_bootstrap.stdout"
+  no_log: true
+
+- name: Install Flux without bootstrap (no GitHub token)
+  when: github_token | default('') | length == 0
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  ansible.builtin.command: flux install
+  register: flux_install
+  changed_when: "'installed' in flux_install.stdout"
+
+- name: Create GHCR credentials secret
+  when: github_token | default('') | length > 0
+  ansible.builtin.shell: |
+    kubectl create namespace cicd --dry-run=client -o yaml | \
+      kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+    kubectl create secret docker-registry ghcr-credentials \
+      --namespace=cicd \
+      --docker-server=ghcr.io \
+      --docker-username={{ github_owner }} \
+      --docker-password={{ github_token }} \
+      --dry-run=client -o yaml | \
+    kubectl apply -f - --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  changed_when: false
+  no_log: true
+
+- name: Verify Flux deployment
+  ansible.builtin.command: >
+    flux get all --kubeconfig=/etc/rancher/k3s/k3s.yaml
+  register: flux_status
+  changed_when: false
+  failed_when: false
+
+- name: Show Flux status
+  ansible.builtin.debug:
+    msg: "{{ flux_status.stdout_lines }}"

@@ -1,0 +1,97 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "65.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+      interval: 12h
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  values:
+    # Grafana
+    grafana:
+      enabled: true
+      adminPassword: ""  # Set via Secret externally
+      ingress:
+        enabled: false   # Access via tailscale serve or port-forward
+      sidecar:
+        dashboards:
+          enabled: true
+          searchNamespace: ALL
+
+    # Prometheus
+    prometheus:
+      prometheusSpec:
+        retention: 30d
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 50Gi
+        # Scrape targets on the local network
+        additionalScrapeConfigs:
+          - job_name: "jetson-orin"
+            static_configs:
+              - targets: ["jetson-orin.local:9100"]
+                labels:
+                  device: "jetson-orin"
+                  type: "compute"
+          - job_name: "radar-awr2944"
+            static_configs:
+              - targets: ["radar.local:9100"]
+                labels:
+                  device: "awr2944"
+                  type: "sensor"
+            scrape_interval: 30s
+          - job_name: "cameras"
+            static_configs:
+              - targets:
+                  - "cam-front.local:9100"
+                  - "cam-rear.local:9100"
+                labels:
+                  device: "camera"
+                  type: "sensor"
+          - job_name: "node-exporter-buildserver"
+            static_configs:
+              - targets: ["localhost:9100"]
+                labels:
+                  device: "build-server"
+                  type: "server"
+
+    # Alertmanager
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        storage:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 5Gi
+
+    # Node exporter on the build server itself
+    nodeExporter:
+      enabled: true
+
+    # Kube-state-metrics
+    kubeStateMetrics:
+      enabled: true

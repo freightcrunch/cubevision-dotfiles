@@ -1,0 +1,32 @@
+# ─── Copy to build-server.tfvars and fill in values ──────────────
+# NEVER commit the actual .tfvars file with secrets!
+
+environment = "dev"
+project_name = "cubevision"
+
+# Build server
+build_server = {
+  host         = "build-server"
+  user         = "cube"
+  ssh_key_path = "~/.ssh/id_ed25519"
+  ip_address   = "192.168.1.100"
+  ssh_port     = 22
+}
+
+# Cloudflare
+cloudflare_api_token  = "cf-api-token-here"
+cloudflare_account_id = "cf-account-id-here"
+cloudflare_zone_id    = "cf-zone-id-here"
+domain                = "cubevision.dev"
+
+# Tailscale
+tailscale_api_key = "tskey-api-XXXX"
+tailscale_tailnet = "your-tailnet.ts.net"
+
+# GitHub (for Flux bootstrap)
+github_token      = "ghp_XXXXXXXXXXXX"
+github_owner      = "n-drw"
+github_repository = "cubevision-dotfiles"
+
+# K3s
+k3s_version = "v1.31.4+k3s1"
