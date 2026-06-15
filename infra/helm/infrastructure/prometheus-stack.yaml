@@ -92,6 +92,15 @@ spec:
     nodeExporter:
       enabled: true
 
+    # node-exporter subchart settings.
+    # WSL2's root filesystem is a private mount, so the default
+    # HostToContainer (rslave) propagation on the host rootfs mount makes the
+    # container fail to start ("path / ... is not a shared or slave mount").
+    # Drop propagation to None so node-exporter starts on WSL2/K3s.
+    prometheus-node-exporter:
+      hostRootFsMount:
+        mountPropagation: None
+
     # Kube-state-metrics
     kubeStateMetrics:
       enabled: true
