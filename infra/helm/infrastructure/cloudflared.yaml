@@ -38,6 +38,8 @@ spec:
       targetPath: cloudflare.tunnel_token
   values:
     replicaCount: 2
+    cloudflare:
+      tunnelName: cubework
     resources:
       requests:
         cpu: 50m
