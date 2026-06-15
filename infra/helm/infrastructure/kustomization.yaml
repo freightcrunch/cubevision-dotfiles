@@ -1,6 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: monitoring
 resources:
   # Namespaces
   - namespaces.yaml
@@ -11,7 +10,3 @@ resources:
   # Networking / tunnels
   - cloudflared.yaml
   - openvpn-as.yaml
-
-  # CI/CD
-  - tekton-pipelines.yaml
-  - tekton-triggers.yaml

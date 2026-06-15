@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Tekton installed from official upstream release manifests (vendored, pinned).
+# Compatible set (per Dashboard v0.69.0 release notes):
+#   Pipelines v1.13.1 + Triggers v0.36.0 + Dashboard v0.69.0
+# All install into the tekton-pipelines namespace (carried by the manifests).
+resources:
+  - pipelines.yaml
+  - triggers.yaml
+  - triggers-interceptors.yaml
+  - dashboard.yaml

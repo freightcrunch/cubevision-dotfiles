@@ -4,6 +4,5 @@ resources:
   - helm-prometheus-community.yaml
   - helm-cloudflare.yaml
   - helm-openvpn.yaml
-  - helm-tekton.yaml
   - helm-grafana.yaml
   - helm-bitnami.yaml

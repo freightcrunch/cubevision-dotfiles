@@ -57,26 +57,29 @@ infra/
 │       ├── kustomization.yaml      # Root: wires sources → infra → apps
 │       ├── sources.yaml            # Kustomization: Helm repos
 │       ├── infrastructure.yaml     # Kustomization: core services
-│       └── apps.yaml               # Kustomization: workloads
+│       ├── apps.yaml               # Kustomization: workloads
+│       └── tekton.yaml             # Kustomization: Tekton CI/CD
 ├── helm/
 │   ├── sources/                    # HelmRepository definitions
 │   │   ├── helm-prometheus-community.yaml
 │   │   ├── helm-cloudflare.yaml
 │   │   ├── helm-openvpn.yaml
-│   │   ├── helm-tekton.yaml
 │   │   ├── helm-grafana.yaml
 │   │   └── helm-bitnami.yaml
 │   ├── infrastructure/             # HelmRelease definitions (core)
 │   │   ├── namespaces.yaml
 │   │   ├── prometheus-stack.yaml
 │   │   ├── cloudflared.yaml
-│   │   ├── openvpn-as.yaml
-│   │   ├── tekton-pipelines.yaml
-│   │   └── tekton-triggers.yaml
-│   └── apps/                       # HelmRelease definitions (workloads)
-│       ├── chatcli-operator.yaml
-│       ├── network-health-monitor.yaml
-│       └── flux-image-automation.yaml
+│   │   └── openvpn-as.yaml
+│   ├── apps/                       # HelmRelease definitions (workloads)
+│   │   ├── chatcli-operator.yaml
+│   │   ├── network-health-monitor.yaml
+│   │   └── flux-image-automation.yaml
+│   └── tekton/                     # Tekton CI/CD (vendored upstream manifests)
+│       ├── pipelines.yaml          # Pipelines v1.13.1
+│       ├── triggers.yaml           # Triggers v0.36.0
+│       ├── triggers-interceptors.yaml
+│       └── dashboard.yaml          # Dashboard v0.69.0
 ├── pipelines/
 │   └── build-and-push.yaml         # Tekton Pipeline + Triggers
 └── README.md
@@ -154,7 +157,7 @@ kubectl get helmreleases -A
 | Service | Access Method |
 |---------|--------------|
 | Grafana | `tailscale serve` or `build.cubevision.dev` (Cloudflare tunnel) |
-| Tekton Dashboard | `ci.cubevision.dev` or `kubectl port-forward -n cicd svc/tekton-dashboard 9097` |
+| Tekton Dashboard | `ci.cubevision.dev` or `kubectl port-forward -n tekton-pipelines svc/tekton-dashboard 9097` |
 | Prometheus | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090` |
 | OpenVPN | UDP 1194 / TCP 443 on build server IP |
 | Alertmanager | `kubectl port-forward -n monitoring svc/kube-prometheus-stack-alertmanager 9093` |

@@ -6,4 +6,4 @@ metadata:
   namespace: flux-system
 spec:
   interval: 24h
-  url: https://charts.openvpn.net
+  url: https://openvpn.github.io/as-helm-chart

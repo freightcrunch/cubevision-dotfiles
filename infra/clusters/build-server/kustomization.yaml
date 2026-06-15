@@ -8,3 +8,6 @@ resources:
   - sources.yaml
   - infrastructure.yaml
   - apps.yaml
+
+  # CI/CD: Tekton (official upstream manifests, vendored)
+  - tekton.yaml

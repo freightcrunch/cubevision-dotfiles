@@ -49,7 +49,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "build_server" {
     }
     ingress_rule {
       hostname = "ci.${var.domain}"
-      service  = "http://tekton-dashboard.cicd.svc:9097"
+      service  = "http://tekton-dashboard.tekton-pipelines.svc:9097"
     }
     ingress_rule {
       hostname = "alerts.${var.domain}"
