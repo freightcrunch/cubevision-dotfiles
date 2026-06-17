@@ -1,0 +1,90 @@
+---
+# Tekton Tasks for building the ams-bol-system artifacts.
+# Mirrors the "Build backend" / "Build frontend" steps of .github/workflows/deploy.yml.
+# These run in-cluster on the build server and leave artifacts in the shared
+# `source` workspace, which the ssh-deploy task then SCPs to the Azure VM.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-cargo-build
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+spec:
+  description: >
+    Compile the Rust backend in release mode. Produces
+    target/release/ams-bol-system in the source workspace.
+  workspaces:
+    - name: source
+    - name: cargo-cache
+      optional: true
+  steps:
+    - name: cargo-build
+      # Match the Dockerfile builder image so the toolchain/glibc target the VM expects.
+      image: rust:1.82-bookworm
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: CARGO_BUILD_JOBS
+          value: "4"
+        - name: CARGO_HOME
+          value: $(workspaces.cargo-cache.path)/cargo
+      computeResources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        apt-get update -qq
+        apt-get install -y --no-install-recommends mold clang >/dev/null
+        echo "==> cargo build --release"
+        cargo build --release
+        echo "==> built binary:"
+        ls -lh target/release/ams-bol-system
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-npm-build
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+spec:
+  description: >
+    Build the Next.js frontend. Produces frontend/.next in the source workspace.
+    Clerk publishable key + URLs are public build-time values (same as the GH workflow).
+  workspaces:
+    - name: source
+  steps:
+    - name: npm-build
+      image: node:20-bookworm
+      workingDir: $(workspaces.source.path)/frontend
+      env:
+        - name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          value: pk_live_Y2xlcmsucGllcnNpZ25hbC5jb20k
+        - name: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+          value: /login
+        - name: NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL
+          value: /dashboard
+        - name: NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
+          value: /dashboard
+      computeResources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+        echo "==> npm ci"
+        npm ci
+        echo "==> npm run build"
+        npm run build
+        echo "==> frontend build output:"
+        ls -lh .next | head

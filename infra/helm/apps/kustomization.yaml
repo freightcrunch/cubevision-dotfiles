@@ -4,3 +4,4 @@ resources:
   - chatcli-operator.yaml
   - network-health-monitor.yaml
   - flux-image-automation.yaml
+  - actions-runner-controller.yaml

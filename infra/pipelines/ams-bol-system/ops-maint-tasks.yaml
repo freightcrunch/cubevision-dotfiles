@@ -1,0 +1,393 @@
+---
+# On-demand maintenance / monitoring Tasks (run as TaskRuns from the dashboard).
+# Each mirrors a workflow_dispatch GitHub Action over SSH.
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-check-health
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: check_health.yml
+spec:
+  description: Report backend service status, journal, health endpoint, DB connections and memory.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: check-health
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        echo "=== systemctl status ==="
+        sudo systemctl is-active piersignal-backend && echo "STATUS: ACTIVE" || echo "STATUS: INACTIVE"
+        echo "=== recent journal ==="
+        sudo journalctl -u piersignal-backend -n 40 --no-pager
+        echo "=== health endpoint ==="
+        curl -sf http://localhost:3001/health && echo "HEALTH: OK" || echo "HEALTH: FAIL"
+        export $(grep -E '^DATABASE_URL=' /opt/piersignal/.env | xargs)
+        psql "$DATABASE_URL" -c "SELECT count(*) AS connections, state FROM pg_stat_activity GROUP BY state ORDER BY state;" 2>/dev/null || echo "(psql unavailable)"
+        psql "$DATABASE_URL" -c "SELECT status, count(*) FROM file_upload GROUP BY status ORDER BY status;" 2>/dev/null || true
+        echo "=== dmesg OOM check ==="
+        sudo dmesg | grep -i "oom\|killed process\|out of memory" | tail -5 || echo "(no OOM)"
+        free -h
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-diagnose
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: diagnose.yml
+spec:
+  description: Deep VM diagnostics — pm2, backend journal, DB connectivity, ports, whitelist endpoint.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: diagnose
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" 2>/dev/null || true
+        echo "=== BACKEND SERVICE STATUS ==="
+        sudo systemctl status piersignal-backend --no-pager || true
+        echo "=== PORT 3001 LISTENING? ==="
+        ss -tlnp | grep 3001 || echo "nothing on 3001"
+        DB_URL=$(sudo grep '^DATABASE_URL=' /opt/piersignal/.env 2>/dev/null | head -1 | sed 's/^DATABASE_URL=//')
+        if [ -n "$DB_URL" ]; then
+          timeout 5 psql "$DB_URL" -c "SELECT 'DB reachable'" 2>&1 || echo "psql FAILED"
+          timeout 5 psql "$DB_URL" -c "SELECT pid, application_name, state, wait_event_type, wait_event, left(query,60) FROM pg_stat_activity WHERE pid <> pg_backend_pid() ORDER BY state" 2>&1 || true
+          timeout 10 psql "$DB_URL" -c "SELECT version, description FROM _sqlx_migrations ORDER BY version" 2>&1 || true
+        fi
+        echo "=== PM2 STATUS ==="; pm2 list || true
+        echo "=== HOME PAGE STATUS ==="; curl -o /dev/null -sw "%{http_code}\n" http://localhost:3003/ || echo failed
+        echo "=== FRONTEND pm2 error log ==="; pm2 logs piersignal-frontend --err --lines 30 --nostream 2>/dev/null || true
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-monitor-backfill
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: monitor_backfill.yml
+spec:
+  description: Tail the Excel backfill log and report PID/health status.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: monitor-backfill
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        if [ -f /tmp/excel_backfill.pid ]; then
+          PID=$(cat /tmp/excel_backfill.pid)
+          kill -0 "$PID" 2>/dev/null && echo "RUNNING (PID $PID)" || echo "STOPPED (PID $PID)"
+        else
+          echo "No PID file found"
+        fi
+        echo "=== last 60 log lines ==="
+        tail -60 /tmp/excel_backfill.log 2>/dev/null || echo "(no log file)"
+        curl -sf http://localhost:3001/health && echo "HEALTH: OK" || echo "HEALTH: FAIL"
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-add-swap
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: add_swap.yml
+spec:
+  description: One-time — create a 4 GB swapfile on the VM and persist it in /etc/fstab.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: add-swap
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        free -h; swapon --show
+        if [ -f /swapfile ]; then echo "/swapfile exists"; else
+          sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+        fi
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile || echo "swapon FAILED"
+        grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        free -h; swapon --show
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-excel-backfill
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: excel_backfill.yml
+spec:
+  description: Launch the Excel broker-data backfill on the VM (detached), ensuring swap exists.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: excel-backfill
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: azure-storage-connection-string
+        - name: INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: internal-api-token
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" \
+          AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+          INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
+          'bash -s' <<'REMOTE'
+        if [ -f /tmp/excel_backfill.pid ]; then
+          OLD_PID=$(cat /tmp/excel_backfill.pid); kill "$OLD_PID" 2>/dev/null || true; rm -f /tmp/excel_backfill.pid
+        fi
+        if ! swapon --show | grep -q /swapfile; then
+          sudo fallocate -l 4G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+          sudo chmod 600 /swapfile; sudo mkswap /swapfile -q; sudo swapon /swapfile
+        fi
+        pip3 install openpyxl azure-storage-blob psycopg2-binary pyxlsb --quiet 2>/dev/null || true
+        cd /opt/piersignal
+        git pull origin master --quiet 2>/dev/null || echo "git pull skipped"
+        nohup python3 -u scripts/load_broker_data.py --from-blob > /tmp/excel_backfill.log 2>&1 &
+        echo $! > /tmp/excel_backfill.pid
+        echo "Started PID $(cat /tmp/excel_backfill.pid)"
+        sleep 10
+        tail -20 /tmp/excel_backfill.log || true
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-cbp-backfill
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: cbp_backfill.yml
+spec:
+  description: Run the CBP SFTP download/ingest on the VM.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: cbp-backfill
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: azure-storage-connection-string
+        - name: INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: internal-api-token
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" \
+          AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+          INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
+          'bash -s' <<'REMOTE'
+        sudo apt-get install -y python3-paramiko python3-requests --quiet 2>/dev/null || true
+        cd /opt/piersignal
+        python3 scripts/sftp_download.py --key /opt/piersignal/cbp/CBPAMSFOIA-JFSCHB --backend http://localhost:3001
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-recover-from-blob
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: recover-from-blob.yml
+spec:
+  description: Re-ingest files from Azure blob storage after waiting for backend health.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: recover-from-blob
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+        - name: AZURE_STORAGE_CONNECTION_STRING
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: azure-storage-connection-string
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" \
+          AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+          'bash -s' <<'REMOTE'
+        set -e
+        cd /opt/piersignal
+        sleep 15
+        for i in $(seq 1 30); do
+          curl -sf http://localhost:3001/health > /dev/null 2>&1 && { echo "Backend healthy ($i)"; break; }
+          echo "  waiting 10s... ($i/30)"; sleep 10
+        done
+        curl -sf http://localhost:3001/health || { echo "Backend never came up"; exit 1; }
+        pip3 install --quiet azure-storage-blob 2>/dev/null || pip3 install --quiet --break-system-packages azure-storage-blob 2>/dev/null || true
+        BACKEND_PID=$(sudo systemctl show piersignal-backend -p MainPID --value 2>/dev/null || echo "")
+        INTERNAL_TOKEN=""
+        if [ -n "$BACKEND_PID" ] && [ "$BACKEND_PID" != "0" ]; then
+          INTERNAL_TOKEN=$(sudo tr '\0' '\n' < /proc/$BACKEND_PID/environ 2>/dev/null | grep '^INTERNAL_API_TOKEN=' | sed 's/INTERNAL_API_TOKEN=//')
+        fi
+        [ -n "$INTERNAL_TOKEN" ] && curl -s -X POST http://localhost:3001/api/uploads/cleanup-stale -H "x-internal-token: $INTERNAL_TOKEN" || echo "skip cleanup"
+        python3 scripts/sftp_download.py --from-blob --backend http://localhost:3001 --key /opt/piersignal/cbp/CBPAMSFOIA-JFSCHB 2>&1
+        echo "=== Recovery complete ==="
+        REMOTE

@@ -1,0 +1,12 @@
+---
+# OCI Helm registry for GitHub's Actions Runner Controller (ARC) charts.
+# Charts: gha-runner-scale-set-controller, gha-runner-scale-set
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: actions-runner-controller
+  namespace: flux-system
+spec:
+  type: oci
+  interval: 24h
+  url: oci://ghcr.io/actions/actions-runner-controller-charts

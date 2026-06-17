@@ -1,0 +1,148 @@
+---
+# Tekton Pipeline: build + deploy ams-bol-system to the Azure VM.
+# Equivalent of .github/workflows/deploy.yml (push to master).
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ams-bol-deploy
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+spec:
+  params:
+    - name: repo-url
+      type: string
+      default: https://github.com/freightcrunch/ams-bol-system
+    - name: revision
+      type: string
+      default: master
+  workspaces:
+    - name: source
+    - name: cargo-cache
+    - name: ssh-creds
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+        apiVersion: tekton.dev/v1
+      workspaces:
+        - name: output
+          workspace: source
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+
+    - name: cargo-build
+      runAfter: [git-clone]
+      taskRef:
+        name: ams-cargo-build
+      workspaces:
+        - name: source
+          workspace: source
+        - name: cargo-cache
+          workspace: cargo-cache
+
+    - name: npm-build
+      runAfter: [git-clone]
+      taskRef:
+        name: ams-npm-build
+      workspaces:
+        - name: source
+          workspace: source
+
+    - name: ssh-deploy
+      runAfter: [cargo-build, npm-build]
+      taskRef:
+        name: ams-ssh-deploy
+      workspaces:
+        - name: source
+          workspace: source
+        - name: ssh-creds
+          workspace: ssh-creds
+
+---
+# TriggerTemplate: instantiate a PipelineRun for the deploy pipeline.
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: ams-bol-deploy-trigger
+  namespace: cicd
+spec:
+  params:
+    - name: git-revision
+      default: master
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: ams-deploy-
+      spec:
+        pipelineRef:
+          name: ams-bol-deploy
+        params:
+          - name: revision
+            value: $(tt.params.git-revision)
+        workspaces:
+          - name: source
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 5Gi
+          - name: cargo-cache
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: 5Gi
+          - name: ssh-creds
+            secret:
+              secretName: ams-bol-ssh
+
+---
+# TriggerBinding: extract fields from the GitHub push payload.
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: ams-bol-deploy-binding
+  namespace: cicd
+spec:
+  params:
+    - name: git-revision
+      value: $(body.after)
+
+---
+# EventListener: GitHub webhook receiver for ams-bol-system pushes to master.
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: ams-bol-webhook
+  namespace: cicd
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: push-to-master
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: github-webhook-secret
+                secretKey: token
+            - name: eventTypes
+              value: ["push"]
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: "body.ref == 'refs/heads/master'"
+      bindings:
+        - ref: ams-bol-deploy-binding
+      template:
+        ref: ams-bol-deploy-trigger

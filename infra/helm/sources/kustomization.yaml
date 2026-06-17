@@ -6,3 +6,4 @@ resources:
   - helm-openvpn.yaml
   - helm-grafana.yaml
   - helm-bitnami.yaml
+  - helm-actions-runner-controller.yaml

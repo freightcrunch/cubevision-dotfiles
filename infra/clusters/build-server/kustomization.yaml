@@ -11,3 +11,4 @@ resources:
 
   # CI/CD: Tekton (official upstream manifests, vendored)
   - tekton.yaml
+  - pipelines.yaml

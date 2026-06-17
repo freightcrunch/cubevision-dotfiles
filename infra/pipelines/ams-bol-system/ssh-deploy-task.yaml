@@ -1,0 +1,237 @@
+---
+# Tekton Task: deploy ams-bol-system to the Azure VM over SSH.
+# Faithful translation of the appleboy/ssh-action + appleboy/scp-action steps
+# in .github/workflows/deploy.yml.
+#
+# Secrets consumed (namespace cicd):
+#   ams-bol-ssh      (kubernetes.io/ssh-auth)  -> ssh-privatekey
+#   ams-bol-secrets  (Opaque) -> vm-host, vm-env-file, internal-api-token,
+#                                 azure-storage-connection-string,
+#                                 cbp-private-key, clerk-secret-key
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-ssh-deploy
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+spec:
+  description: Deploy built backend binary + frontend to the Azure VM and restart services.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+    - name: deploy-path
+      type: string
+      default: /opt/piersignal
+  workspaces:
+    - name: source
+    - name: ssh-creds
+  stepTemplate:
+    image: alpine:3.20
+    env:
+      - name: VM_USER
+        value: $(params.vm-user)
+      - name: DEPLOY_PATH
+        value: $(params.deploy-path)
+      - name: VM_HOST
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: vm-host
+      - name: INTERNAL_API_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: internal-api-token
+      - name: AZURE_STORAGE_CONNECTION_STRING
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: azure-storage-connection-string
+      - name: CBP_PRIVATE_KEY
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: cbp-private-key
+      - name: CLERK_SECRET_KEY
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: clerk-secret-key
+      - name: VM_ENV_FILE
+        valueFrom:
+          secretKeyRef:
+            name: ams-bol-secrets
+            key: vm-env-file
+  steps:
+    - name: prep-ssh
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client rsync curl >/dev/null
+        mkdir -p /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        echo "SSH prepared for ${VM_USER}@${VM_HOST}"
+
+    - name: stop-services
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        export NVM_DIR="$HOME/.nvm"
+        if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+        fi
+        . "$NVM_DIR/nvm.sh"
+        nvm install 20 --no-progress
+        nvm alias default 20
+        npm install -g pm2
+        sudo systemctl stop piersignal-backend || true
+        pm2 stop piersignal-frontend || true
+        sleep 3
+        DB_URL=$(sudo grep '^DATABASE_URL=' /opt/piersignal/.env 2>/dev/null | head -1 | sed 's/^DATABASE_URL=//')
+        if [ -n "$DB_URL" ]; then
+          psql "$DB_URL" -t -c "SELECT count(*) FROM (SELECT pg_terminate_backend(a.pid) FROM pg_locks l JOIN pg_stat_activity a ON l.pid = a.pid WHERE l.locktype='advisory' AND l.granted=true AND a.pid<>pg_backend_pid()) t(r) WHERE r=true" 2>/dev/null || true
+          psql "$DB_URL" -t -c "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid<>pg_backend_pid()) t(r) WHERE r=true" 2>/dev/null || true
+          sleep 3
+        else
+          echo "WARNING: DATABASE_URL not found — skipping DB cleanup"
+          sleep 5
+        fi
+        REMOTE
+
+    - name: copy-artifacts
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        SSH="ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts"
+        SCP="scp -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts"
+        DEST="${VM_USER}@${VM_HOST}:${DEPLOY_PATH}"
+        $SSH "${VM_USER}@${VM_HOST}" "mkdir -p ${DEPLOY_PATH}/target/release ${DEPLOY_PATH}/frontend ${DEPLOY_PATH}/scripts"
+        echo "==> copy backend binary"
+        $SCP target/release/ams-bol-system "${DEST}/target/release/"
+        echo "==> copy frontend build"
+        $SCP -r frontend/.next frontend/public frontend/package.json frontend/package-lock.json "${DEST}/frontend/"
+        echo "==> copy downloader scripts"
+        $SCP scripts/sftp_download.py scripts/load_broker_data.py "${DEST}/scripts/"
+
+    - name: configure-vm
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" \
+          INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
+          AZURE_STORAGE_CONNECTION_STRING="$AZURE_STORAGE_CONNECTION_STRING" \
+          CBP_PRIVATE_KEY="$CBP_PRIVATE_KEY" \
+          VM_ENV_FILE="$VM_ENV_FILE" \
+          'bash -s' <<'REMOTE'
+        set -e
+        # --- nginx + SSL ---
+        sudo tee /etc/nginx/sites-available/piersignal > /dev/null << 'NGINX'
+        server {
+            listen 80;
+            server_name piersignal.com www.piersignal.com 172.171.2.196 _;
+            location /api/auth/  { proxy_pass http://127.0.0.1:3003; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; }
+            location /api/admin/ { proxy_pass http://127.0.0.1:3003; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_http_version 1.1; }
+            location /api/ { proxy_pass http://127.0.0.1:3001; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_set_header X-Internal-Token "__INTERNAL_TOKEN__"; proxy_read_timeout 300s; }
+            location / { proxy_pass http://127.0.0.1:3003; proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection 'upgrade'; }
+        }
+        NGINX
+        sudo sed -i "s/__INTERNAL_TOKEN__/${INTERNAL_API_TOKEN}/" /etc/nginx/sites-available/piersignal
+        sudo ln -sf /etc/nginx/sites-available/piersignal /etc/nginx/sites-enabled/piersignal
+        sudo rm -f /etc/nginx/sites-enabled/default
+        sudo nginx -t && sudo systemctl reload nginx
+        if ! command -v certbot >/dev/null; then sudo apt-get install -y certbot python3-certbot-nginx --quiet; fi
+        DOMAIN_IP=$(dig +short piersignal.com 2>/dev/null | tail -1 || true)
+        MY_IP=$(curl -sf --connect-timeout 3 http://checkip.amazonaws.com || true)
+        if [ "$DOMAIN_IP" = "$MY_IP" ] && [ -n "$DOMAIN_IP" ]; then
+          sudo certbot --nginx -d piersignal.com -d www.piersignal.com --non-interactive --agree-tos -m jack.chang@cubeship.com --redirect || echo "certbot skipped"
+        fi
+        # --- env file ---
+        printf '%s\n' "$VM_ENV_FILE" | sudo tee /opt/piersignal/.env > /dev/null
+        sudo chmod 600 /opt/piersignal/.env
+        sudo grep -q '^INTERNAL_API_TOKEN=' /opt/piersignal/.env || printf 'INTERNAL_API_TOKEN=%s\n' "${INTERNAL_API_TOKEN}" | sudo tee -a /opt/piersignal/.env > /dev/null
+        sudo grep -q 'AZURE_STORAGE_CONNECTION_STRING' /opt/piersignal/.env || printf 'AZURE_STORAGE_CONNECTION_STRING=%s\n' "${AZURE_STORAGE_CONNECTION_STRING}" | sudo tee -a /opt/piersignal/.env > /dev/null
+        sudo grep -q 'AZURE_BLOB_CONTAINER' /opt/piersignal/.env || echo 'AZURE_BLOB_CONTAINER=cbp-ams-zips' | sudo tee -a /opt/piersignal/.env > /dev/null
+        # --- CBP key + cron + python deps ---
+        mkdir -p /opt/piersignal/cbp /opt/piersignal/logs
+        printf '%s\n' "$CBP_PRIVATE_KEY" > /opt/piersignal/cbp/CBPAMSFOIA-JFSCHB
+        chmod 600 /opt/piersignal/cbp/CBPAMSFOIA-JFSCHB
+        sudo apt-get install -y python3-paramiko python3-requests python3-pip --quiet 2>/dev/null || true
+        pip3 install --quiet azure-storage-blob 2>/dev/null || pip3 install --quiet --break-system-packages azure-storage-blob 2>/dev/null || true
+        CRON_CMD="0 9 * * * cd /opt/piersignal && python3 scripts/sftp_download.py --key /opt/piersignal/cbp/CBPAMSFOIA-JFSCHB --backend http://localhost:3001 >> /opt/piersignal/logs/cbp_download.log 2>&1"
+        (crontab -l 2>/dev/null | grep -v sftp_download; echo "$CRON_CMD") | crontab -
+        # --- systemd unit ---
+        sudo tee /etc/systemd/system/piersignal-backend.service > /dev/null << 'SERVICE'
+        [Unit]
+        Description=PIERsignal Backend
+        After=network.target
+        [Service]
+        Type=simple
+        User=piersignal
+        WorkingDirectory=/opt/piersignal
+        EnvironmentFile=/opt/piersignal/.env
+        ExecStart=/opt/piersignal/target/release/ams-bol-system
+        Restart=on-failure
+        RestartSec=5s
+        TimeoutStartSec=600
+        StandardOutput=journal
+        StandardError=journal
+        SyslogIdentifier=piersignal-backend
+        [Install]
+        WantedBy=multi-user.target
+        SERVICE
+        sudo systemctl daemon-reload
+        echo "VM configured."
+        REMOTE
+
+    - name: start-services
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" \
+          CLERK_SECRET_KEY="$CLERK_SECRET_KEY" \
+          INTERNAL_API_TOKEN="$INTERNAL_API_TOKEN" \
+          'bash -s' <<'REMOTE'
+        set -e
+        export NVM_DIR="$HOME/.nvm"
+        . "$NVM_DIR/nvm.sh"
+        chmod +x /opt/piersignal/target/release/ams-bol-system
+        sudo systemctl restart piersignal-backend
+        sleep 3
+        sudo systemctl is-active piersignal-backend || { sudo journalctl -u piersignal-backend -n 50 --no-pager; exit 1; }
+        {
+          echo "CLERK_SECRET_KEY=${CLERK_SECRET_KEY}"
+          echo "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsucGllcnNpZ25hbC5jb20k"
+          echo "NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login"
+          echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard"
+          echo "NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard"
+          echo "INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}"
+          echo "INTERNAL_API_URL=http://localhost:3001"
+          echo "NEXT_PUBLIC_APP_URL=https://piersignal.com"
+        } > /opt/piersignal/frontend/.env.local
+        cd /opt/piersignal/frontend
+        npm ci --omit=dev
+        pm2 delete piersignal-frontend || true
+        pm2 start npm --name piersignal-frontend -- start -- --port 3003
+        pm2 save
+        sleep 5
+        curl -sf http://localhost:3003 > /dev/null && echo "Frontend OK" || echo "Frontend FAILED"
+        HEALTH_OK=0
+        for i in $(seq 1 60); do
+          if curl -sf http://localhost:3001/health > /dev/null 2>&1; then echo "Backend OK (attempt $i)"; HEALTH_OK=1; break; fi
+          echo "  attempt $i/60 — waiting 5s..."; sleep 5
+        done
+        [ "$HEALTH_OK" = "1" ] || { sudo journalctl -u piersignal-backend -n 50 --no-pager; exit 1; }
+        REMOTE

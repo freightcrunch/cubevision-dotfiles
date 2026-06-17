@@ -1,0 +1,120 @@
+---
+# On-demand DB maintenance Tasks (run from the Tekton Dashboard as TaskRuns).
+# Each mirrors a workflow_dispatch GitHub Action. They SSH into the VM and run
+# psql against the app DATABASE_URL read from /opt/piersignal/.env.
+#
+# Run from dashboard: Create TaskRun -> select task -> provide ssh-creds workspace
+# (secret: ams-bol-ssh).
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-build-indexes
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: build_indexes.yml
+spec:
+  description: Deduplicate bol/party/container/cargo/tariff then build unique indexes CONCURRENTLY.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: build-indexes
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        set -e
+        cd /opt/piersignal
+        export $(grep -E '^DATABASE_URL=' .env | xargs)
+        [ -n "$DATABASE_URL" ] || { echo "ERROR: DATABASE_URL not found"; exit 1; }
+        echo "=== dedup bol ==="
+        psql "$DATABASE_URL" -c "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY file_upload_id, house_bol_number ORDER BY id) AS rn FROM bol WHERE house_bol_number IS NOT NULL) DELETE FROM bol WHERE id IN (SELECT id FROM ranked WHERE rn > 1);"
+        echo "=== dedup party ==="
+        psql "$DATABASE_URL" -c "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY bol_id, role, name ORDER BY id) AS rn FROM party WHERE name IS NOT NULL) DELETE FROM party WHERE id IN (SELECT id FROM ranked WHERE rn > 1);"
+        echo "=== dedup container ==="
+        psql "$DATABASE_URL" -c "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY bol_id, container_number, slot_index ORDER BY id) AS rn FROM container) DELETE FROM container WHERE id IN (SELECT id FROM ranked WHERE rn > 1);"
+        echo "=== dedup cargo ==="
+        psql "$DATABASE_URL" -c "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY bol_id, container_number, description_seq ORDER BY id) AS rn FROM cargo) DELETE FROM cargo WHERE id IN (SELECT id FROM ranked WHERE rn > 1);"
+        echo "=== dedup tariff ==="
+        psql "$DATABASE_URL" -c "WITH ranked AS (SELECT id, ROW_NUMBER() OVER (PARTITION BY cargo_id, tariff_slot ORDER BY id) AS rn FROM tariff) DELETE FROM tariff WHERE id IN (SELECT id FROM ranked WHERE rn > 1);"
+        echo "=== create unique indexes CONCURRENTLY ==="
+        psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uidx_bol_file_house ON bol (file_upload_id, house_bol_number) WHERE house_bol_number IS NOT NULL;"
+        psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uidx_party_bol_role_name ON party (bol_id, role, name) WHERE name IS NOT NULL;"
+        psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uidx_container_bol_number_slot ON container (bol_id, container_number, slot_index);"
+        psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uidx_cargo_bol_container_seq ON cargo (bol_id, container_number, description_seq);"
+        psql "$DATABASE_URL" -c "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS uidx_tariff_cargo_slot ON tariff (cargo_id, tariff_slot);"
+        echo "=== verify ==="
+        psql "$DATABASE_URL" -c "SELECT indexname, tablename FROM pg_indexes WHERE indexname IN ('uidx_bol_file_house','uidx_party_bol_role_name','uidx_container_bol_number_slot','uidx_cargo_bol_container_seq','uidx_tariff_cargo_slot') ORDER BY tablename;"
+        REMOTE
+
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: ams-kill-stuck-queries
+  namespace: cicd
+  labels:
+    app.kubernetes.io/part-of: ams-bol-system
+    ams.ops/source-workflow: kill_stuck_queries.yml
+spec:
+  description: Terminate Postgres queries running longer than 5 minutes, then health-check the backend.
+  params:
+    - name: vm-user
+      type: string
+      default: piersignal
+  workspaces:
+    - name: ssh-creds
+  steps:
+    - name: kill-stuck-queries
+      image: alpine:3.20
+      env:
+        - name: VM_USER
+          value: $(params.vm-user)
+        - name: VM_HOST
+          valueFrom:
+            secretKeyRef:
+              name: ams-bol-secrets
+              key: vm-host
+      script: |
+        #!/bin/sh
+        set -eu
+        apk add --no-cache openssh-client >/dev/null
+        install -m700 -d /tekton/home/.ssh
+        cp $(workspaces.ssh-creds.path)/ssh-privatekey /tekton/home/.ssh/id
+        chmod 600 /tekton/home/.ssh/id
+        ssh-keyscan -H "$VM_HOST" >> /tekton/home/.ssh/known_hosts 2>/dev/null || true
+        ssh -i /tekton/home/.ssh/id -o UserKnownHostsFile=/tekton/home/.ssh/known_hosts \
+          "${VM_USER}@${VM_HOST}" 'bash -s' <<'REMOTE'
+        set -e
+        export $(grep -E '^DATABASE_URL=' /opt/piersignal/.env | xargs)
+        echo "=== active queries before cleanup ==="
+        psql "$DATABASE_URL" -c "SELECT pid, now()-query_start AS duration, state, left(query,60) AS query FROM pg_stat_activity WHERE state != 'idle' AND pid <> pg_backend_pid() ORDER BY query_start;"
+        echo "=== killing queries running > 5 minutes ==="
+        psql "$DATABASE_URL" -c "SELECT pg_terminate_backend(pid), round(extract(epoch from (now()-query_start))/60)::int AS minutes, left(query,60) AS query FROM pg_stat_activity WHERE state != 'idle' AND pid <> pg_backend_pid() AND now() - query_start > interval '5 minutes';"
+        sleep 15
+        for i in $(seq 1 24); do
+          if curl -sf http://localhost:3001/health > /dev/null 2>&1; then echo "HEALTH OK on attempt $i"; break; fi
+          echo "  attempt $i/24..."; sleep 5
+        done
+        sudo journalctl -u piersignal-backend -n 25 --no-pager
+        curl -sf http://localhost:3001/health && echo "HEALTH: OK" || echo "HEALTH: FAIL"
+        REMOTE
