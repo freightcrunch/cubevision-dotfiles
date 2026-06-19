@@ -1,8 +1,3 @@
-# ╔══════════════════════════════════════════════════════════════════════╗
-# ║  .zshrc — Jetson Orin Nano  (Ubuntu 22.04 · aarch64)               ║
-# ╚══════════════════════════════════════════════════════════════════════╝
-
-# ─── Instant prompt (Powerlevel10k) ────────────────────────────────
 typeset -g POWERLEVEL9K_INSTANT_PROMPT=quiet
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
     source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
@@ -123,3 +118,9 @@ esac
 eval "$(/bin/brew shellenv)"
 
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv zsh)"
+
+# NemoClaw PATH setup
+export PATH="/home/hi2190/.local/bin:$PATH"
+# end NemoClaw PATH setup
+
+. "$HOME/.local/share/../bin/env"

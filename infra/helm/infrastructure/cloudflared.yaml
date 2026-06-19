@@ -45,26 +45,3 @@ spec:
       limits:
         cpu: 200m
         memory: 128Mi
-  # The official cloudflare-tunnel-remote chart exposes no protocol/probe knobs.
-  # On WSL2 the default QUIC/UDP transport fails to establish the control stream
-  # ("datagram handler: context canceled"), and the chart's liveness probe
-  # (failureThreshold=1, delay=10s) kills the pod before it can retry. Patch the
-  # rendered Deployment to force HTTP/2 transport and give the probe headroom.
-  postRenderers:
-    - kustomize:
-        patches:
-          - target:
-              kind: Deployment
-              name: cloudflared-cloudflare-tunnel-remote
-            patch: |
-              - op: add
-                path: /spec/template/spec/containers/0/env/-
-                value:
-                  name: TUNNEL_TRANSPORT_PROTOCOL
-                  value: http2
-              - op: add
-                path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
-                value: 30
-              - op: add
-                path: /spec/template/spec/containers/0/livenessProbe/failureThreshold
-                value: 6
