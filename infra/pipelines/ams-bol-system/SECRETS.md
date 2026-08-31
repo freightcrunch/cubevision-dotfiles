@@ -19,16 +19,35 @@ kubectl create secret generic ams-bol-ssh \
 ### App/deploy values (`ams-bol-secrets`)
 Maps to the remaining GH Actions secrets.
 
+**Already seeded** (live in the cluster): `vm-host` (172.171.2.196) and
+`azure-storage-connection-string` (sourced from the shared `internationalpost`
+Azure storage account, via the PayDuties `appsettings.json` `BlobConnection`).
+
+**Still required** — add the remaining keys (merges into the existing secret):
+
 ```bash
-kubectl create secret generic ams-bol-secrets \
-  --namespace=cicd \
+kubectl patch secret ams-bol-secrets -n cicd --type=merge -p "$(cat <<EOF
+{"stringData":{
+  "internal-api-token":"$INTERNAL_API_TOKEN",
+  "clerk-secret-key":"$CLERK_SECRET_KEY"
+}}
+EOF
+)"
+
+# binary/multiline values are easier via create+apply:
+kubectl create secret generic ams-bol-secrets -n cicd \
   --from-literal=vm-host="172.171.2.196" \
-  --from-literal=internal-api-token="$INTERNAL_API_TOKEN" \
   --from-literal=azure-storage-connection-string="$AZURE_STORAGE_CONNECTION_STRING" \
+  --from-literal=internal-api-token="$INTERNAL_API_TOKEN" \
   --from-literal=clerk-secret-key="$CLERK_SECRET_KEY" \
   --from-file=cbp-private-key=/path/to/CBPAMSFOIA-JFSCHB \
-  --from-file=vm-env-file=/path/to/vm.env
+  --from-file=vm-env-file=/path/to/vm.env \
+  --dry-run=client -o yaml | kubectl apply -f -
 ```
+
+Sources: `clerk-secret-key` → Clerk dashboard (piersignal.com, `sk_live_...`);
+`internal-api-token` → backend `.env` on the VM (or rotate);
+`cbp-private-key` → CBP SFTP key file; `vm-env-file` → full backend `.env`.
 
 | Key | GH Actions equivalent |
 |-----|-----------------------|

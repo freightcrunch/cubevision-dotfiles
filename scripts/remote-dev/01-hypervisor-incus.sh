@@ -20,6 +20,16 @@ VM_CPUS=4
 VM_MEMORY="8GiB"
 VM_DISK="50GiB"
 
+# Instance type: "vm" = full virtual machine (needs KVM + SMM; bare-metal host),
+# "container" = system container (shares host kernel, no nested-virt/SMM needed).
+# WSL2's nested virtualization does NOT support SMM, so OVMF-based Incus VMs crash
+# with "KVM: entry failed, hardware error 0xffffffff". Default to containers there.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    INSTANCE_TYPE="${INSTANCE_TYPE:-container}"
+else
+    INSTANCE_TYPE="${INSTANCE_TYPE:-vm}"
+fi
+
 install_incus() {
     print_header "Installing Incus"
 
@@ -114,19 +124,27 @@ launch_dev_vm() {
     local vm_name="${1:-dev-ubuntu}"
     local image="${2:-images:ubuntu/24.04}"
 
-    print_header "Launching VM: ${vm_name}"
+    local type_flag=""
+    [[ "${INSTANCE_TYPE}" == "vm" ]] && type_flag="--vm"
+
+    print_header "Launching ${INSTANCE_TYPE}: ${vm_name}"
 
     if incus info "${vm_name}" &>/dev/null; then
-        echo "VM '${vm_name}' already exists"
+        echo "Instance '${vm_name}' already exists"
         incus start "${vm_name}" 2>/dev/null || true
     else
-        incus launch "${image}" "${vm_name}" --vm --profile default --profile "${PROFILE_NAME}"
-        echo "Waiting for VM to boot..."
+        incus launch "${image}" "${vm_name}" ${type_flag} --profile default --profile "${PROFILE_NAME}"
+        # Disable Secure Boot for VMs so OVMF drops the SMM firmware path — helps
+        # on nested-virt hosts that can't service SMM (no effect on containers).
+        if [[ "${INSTANCE_TYPE}" == "vm" ]]; then
+            incus config set "${vm_name}" security.secureboot=false 2>/dev/null || true
+        fi
+        echo "Waiting for ${vm_name} to boot..."
         sleep 15
         incus exec "${vm_name}" -- cloud-init status --wait 2>/dev/null || sleep 10
     fi
 
-    echo "VM '${vm_name}' is running:"
+    echo "Instance '${vm_name}' status:"
     incus list "${vm_name}" -f compact
 }
 
@@ -138,12 +156,15 @@ main() {
     create_dev_profile
 
     echo ""
-    print_header "Incus ready"
-    echo "Launch a dev VM with:"
-    echo "  incus launch images:ubuntu/24.04 dev-ubuntu --vm --profile default --profile ${PROFILE_NAME}"
+    print_header "Incus ready (instance type: ${INSTANCE_TYPE})"
+    if [[ "${INSTANCE_TYPE}" == "container" ]]; then
+        echo "WSL2 detected — using system containers (VMs need SMM, unsupported on WSL2)."
+    fi
+    echo "Launch a dev instance with:"
+    echo "  bash $0 launch <name> [image]"
     echo ""
-    echo "Or run:"
-    echo "  bash $0 launch <vm-name> [image]"
+    echo "Override the type explicitly with INSTANCE_TYPE=vm|container, e.g.:"
+    echo "  INSTANCE_TYPE=container bash $0 launch dev-ubuntu"
 }
 
 case "${1:-}" in
