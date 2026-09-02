@@ -2,6 +2,26 @@
 
 ## 1. CSI Camera (e.g. IMX219, IMX477)
 
+### Enable CSI Overlay (Required First-Time Setup)
+
+Jetson Orin does **not** create `/dev/video*` nodes for CSI cameras by default.
+You must enable the correct device tree overlay, then reboot:
+
+```bash
+sudo /opt/nvidia/jetson-io/jetson-io.py
+```
+
+- Select **Configure Jetson 24pin CSI Connector**
+- Choose the matching overlay (e.g. **Camera IMX219 Dual** for 2× IMX219)
+- Save, exit, and **reboot**
+
+After reboot, verify the overlay is active:
+
+```bash
+sudo cat /proc/device-tree/nvidia,dtbbuildtime 2>/dev/null
+dmesg | grep -i imx
+```
+
 ### Detect
 
 ```bash
@@ -99,6 +119,8 @@ gst-launch-1.0 v4l2src device=/dev/video0 num-buffers=1 ! \
 
 ## Troubleshooting
 
-- **No /dev/video***: Check cable, run `sudo dmesg | tail -20`
+- **No /dev/video* (CSI)**: Device tree overlay not loaded — run `sudo /opt/nvidia/jetson-io/jetson-io.py`, enable the correct camera overlay, and reboot. Verify with `dmesg | grep -iE 'imx|csi|vi '`
+- **Only /dev/media0, no /dev/video***: Tegra VI driver loaded but no sensor bound. Check connector seating, ribbon cable orientation (contacts face the board), and that the overlay matches your sensor
 - **nvarguscamerasrc not found**: `sudo apt install nvidia-l4t-gstreamer`
 - **Camera busy**: Another process may hold the device. Check `fuser /dev/video0`
+- **Arducam-specific**: Some Arducam boards need their own driver/overlay. Check [arducam.com/docs](https://docs.arducam.com) for Jetson Orin instructions

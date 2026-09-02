@@ -374,6 +374,27 @@ install_nanoclaw() {
     info "See nanoclaw/README.md for full documentation."
 }
 
+# ─── JetPack update / version check ────────────────────────────
+install_jetpack() {
+    section "JetPack Version Check / Update"
+
+    chmod +x "$DOTFILES/scripts/update-jetpack.sh"
+    info "Running update-jetpack.sh (read-only check) ..."
+    echo
+    bash "$DOTFILES/scripts/update-jetpack.sh" --check || true
+    echo
+    info "JetPack update script ready at:"
+    info "  $DOTFILES/scripts/update-jetpack.sh"
+    info ""
+    info "Usage:"
+    info "  bash scripts/update-jetpack.sh --check   # current vs latest"
+    info "  bash scripts/update-jetpack.sh --apply   # in-place apt upgrade (same major)"
+    info "  bash scripts/update-jetpack.sh --post    # post-update dependency sync"
+    info ""
+    info "Note: JetPack 7.x (Ubuntu 24.04, CUDA 13.2) requires a reflash via"
+    info "SDK Manager from an x86_64 host — see guides/01-flash-system.md."
+}
+
 # ─── Git config ─────────────────────────────────────────────────
 install_git() {
     section "Git Configuration"
@@ -395,7 +416,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nanoclaw | --infra]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nanoclaw | --infra | --jetpack]"
     echo "  No arguments = install everything"
 }
 
@@ -420,6 +441,7 @@ main() {
         install_mmwave
         install_nanoclaw
         install_infra
+        install_jetpack
     else
         for arg in "$@"; do
             case "$arg" in
@@ -434,6 +456,7 @@ main() {
                 --mmwave)   install_mmwave ;;
                 --nanoclaw) install_nanoclaw ;;
                 --infra)    install_infra ;;
+                --jetpack)  install_jetpack ;;
                 --git)      install_git ;;
                 --help|-h)  usage; exit 0 ;;
                 *)          error "Unknown option: $arg"; usage; exit 1 ;;

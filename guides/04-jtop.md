@@ -5,9 +5,12 @@
 ## 1. Install
 
 ```bash
-sudo pip3 install -U jetson-stats
+sudo pip3 install -U jetson-stats --break-system-packages
 sudo systemctl restart jtop.service
 ```
+
+> On JetPack 7.x, jtop may show **"Jetpack NOT DETECTED"** — this is cosmetic;
+> all live metrics work. Run the patch below to fix the version display.
 
 ## 2. Usage
 
@@ -60,6 +63,7 @@ sudo bash ~/work/CascadeProjects/dotfiles/scripts/patch-jtop-jetpack.sh
 ```
 
 The script is idempotent — safe to re-run after `pip3 install -U jetson-stats`.
+It currently maps L4T 36.4.7 → JP 6.2.1 and JP7 releases (39.0/39.1/39.2/39.2.1 → 7.1/7.1.1/7.2/7.2.1).
 To add future L4T versions, edit the `PATCHES` map in the script.
 
 ## 6. Alias
