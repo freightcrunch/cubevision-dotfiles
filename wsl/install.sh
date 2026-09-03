@@ -8,6 +8,10 @@
 # ║                                                                      ║
 # ║  With no arguments, installs everything.                             ║
 # ╚══════════════════════════════════════════════════════════════════════╝
+# Re-exec under bash if invoked via sh/dash (e.g. `sudo sh install.sh`)
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
