@@ -1,130 +1,134 @@
-# NanoClaw — OpenClaw on Jetson Orin Nano
+# NemoClaw — NVIDIA NemoClaw on Jetson Orin Nano
 
-Local AI assistant powered by [OpenClaw](https://github.com/openclaw/openclaw) running on the NVIDIA Jetson Orin Nano.
+[NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) is an open source reference stack for
+running always-on AI agents — [OpenClaw](https://openclaw.ai) (default), [Hermes](https://get-hermes.ai/),
+or [LangChain Deep Agents Code](https://docs.langchain.com/oss/python/deepagents/code/overview) —
+more safely inside [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes, with guided
+onboarding, routed inference, network policy, and lifecycle management via a single `nemoclaw` CLI.
 
-**Latest stable release: `2026.3.28`**
+> NemoClaw is in **alpha** (early preview since March 2026). APIs and config schemas can change
+> between releases — do not use in production.
 
 ## Overview
 
-OpenClaw is a self-hosted AI gateway that connects to multiple AI backends (Ollama, OpenAI, Anthropic, Google, xAI, etc.) and exposes them through a unified Control UI, CLI, Telegram, Discord, Slack, and more.
+NemoClaw is *not* a standalone npm package you install like a typical CLI tool — it installs its
+own Node.js CLI, then creates a Docker container ("OpenShell sandbox") that runs the selected agent
+(OpenClaw/Hermes/Deep Agents) with hardened network policy and managed inference routing. You then
+`connect` to that sandbox to chat with the agent.
 
-Running it on the Jetson gives you a 24/7 edge AI assistant with local inference via Ollama and optional cloud fallback.
+On the Jetson, `nemoclaw/setup-openclaw.sh` optionally also builds and runs a self-hosted
+**llama.cpp (TurboQuant fork)** inference server as a *custom OpenAI-compatible provider* you can
+select during onboarding — giving you fully local/offline inference on Jetson's unified memory.
 
 ## Prerequisites
 
 - **JetPack 6.2+** (Jetson Linux 36.5)
-- **Node.js 22** (installed by `host/Makefile` → `make node`)
-- **8 GB RAM** — recommend closing desktop/compositor for best performance
-- **Ollama** (optional, for local inference)
+- **Node.js 22.19+** and **npm 10+** (installed by `host/Makefile` → `make node`, or by NemoClaw's own installer)
+- **Docker** (Engine, Desktop, or Colima) — required to run the OpenShell sandbox. The installer can
+  install it for you (will prompt for `sudo`), or use `host/Makefile`/apt to install it yourself first.
+- **cmake, git, build-essential** — only if using `--with-llamacpp` for local inference
+- Enough free disk for Docker images (a few GB) plus any local model download
 
 ## Quick Start
 
 ```bash
-# Run the automated installer
-chmod +x nanoclaw/setup-openclaw.sh
-bash nanoclaw/setup-openclaw.sh
+# Optional: build + run a local llama.cpp (TurboQuant) inference server first,
+# so it's ready to select as a "custom OpenAI-compatible endpoint" during onboarding.
+chmod +x nemoclaw/setup-openclaw.sh
+bash nemoclaw/setup-openclaw.sh --with-llamacpp            # default model: LFM2.5-2.6B
+bash nemoclaw/setup-openclaw.sh --with-llamacpp=gemma4-e4b # pick a specific model
+bash nemoclaw/setup-openclaw.sh --list-models              # see all model keys
+
+# Install NemoClaw + run guided onboarding (interactive by default)
+bash nemoclaw/setup-openclaw.sh
 ```
 
-Or step by step:
+Or run the official installer directly:
 
 ```bash
-# 1. Install OpenClaw globally
-sudo npm install -g openclaw@latest
-openclaw --version
-
-# 2. Run onboarding
-openclaw onboard
-
-# 3. Start the gateway
-openclaw gateway
+curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+# Select an agent (OpenClaw is default), choose a provider/model, name your sandbox.
 ```
 
-## Production Setup (systemd)
-
-The included `openclaw.service` runs the gateway as a locked-down system service:
+For Hermes instead of OpenClaw:
 
 ```bash
-# Copy and enable the service
-sudo cp nanoclaw/openclaw.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now openclaw
-
-# Check status
-sudo systemctl status openclaw
-sudo journalctl -u openclaw -f
+NEMOCLAW_AGENT=hermes bash nemoclaw/setup-openclaw.sh
+# or, after install: nemohermes onboard
 ```
 
-The Control UI is available at **http://127.0.0.1:18789/**
-
-### Get the gateway token
+## Chat With Your Agent
 
 ```bash
-sudo -u openclawuser env \
-    OPENCLAW_HOME=/opt/openclaw/data \
-    HOME=/opt/openclaw/data \
-    openclaw config get gateway.auth.token
+nemoclaw <sandbox-name> connect
 ```
 
-Paste this token into the Control UI when prompted.
-
-## Configuration
-
-The included `openclaw.json` provides sensible Jetson defaults:
-
-- Gateway binds to loopback on port `18789`
-- Memory-optimized settings for 8 GB RAM
-- Ollama configured as the default local backend
-- Recommended models: `qwen3:1.7b` or `gemma3:4b` (fit in ~4 GB)
-
-Edit the config after onboarding:
+Inside the sandbox shell (for OpenClaw):
 
 ```bash
-openclaw configure
-# or edit directly:
-nvim /opt/openclaw/data/openclaw.json
+openclaw tui                                           # terminal UI
+openclaw agent --agent main --local -m "hello" --session-id test  # one-shot message
 ```
 
-## AI Backends
+## Using the Local llama.cpp (TurboQuant) Endpoint as a Provider
 
-| Backend | Type | Notes |
-|---------|------|-------|
-| Ollama | Local | Best for privacy, ~1.5B models recommended |
-| OpenAI | Cloud | GPT-4o, o1, Codex |
-| Anthropic | Cloud | Claude via Azure Foundry |
-| Google | Cloud | Gemini 2.5 Pro/Flash |
-| xAI | Cloud | Grok with x_search |
+During `nemoclaw onboard`, when asked for a provider, choose **"Other OpenAI-compatible endpoint"**
+and enter:
 
-### Ollama Setup
+| Field | Value |
+|---|---|
+| Endpoint | `http://127.0.0.1:8080/v1` (or your host's LAN IP if the sandbox can't reach `127.0.0.1` directly) |
+| Model | any name — the loaded GGUF answers all requests |
+| API key | not needed (use a placeholder like `not-needed`) |
+
+| Model key | Params | Size | Context | Notes |
+|---|---|---|---|---|
+| `lfm2.5-2.6b` (default) | 2.6B dense | ~1.8 GB | 128K | Agentic-tuned, fastest, lightest |
+| `ling-3-tiny` | 7.9B MoE / 1.3B active | ~4.0 GB | 64K | Abliterated (uncensored) |
+| `gemma4-e4b` | 4.5B effective / 8B | ~5.15 GB | 128K | Multimodal, verified on Orin Nano by NVIDIA |
+| `qwen3.5-9b` | 9B dense | ~5.7 GB | 100K (turbo4) / 128K (turbo3) | Needs TurboQuant KV to fit long context on 8 GB |
+
+The server builds under `~/llama-cpp-turboquant` (no `sudo` needed) and runs as a **systemd `--user`
+service** (`llama-server`), so it survives logout only if linger is enabled — the script does this
+automatically via `loginctl enable-linger`.
 
 ```bash
-# Install Ollama (if not already)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model that fits in Jetson RAM
-ollama pull qwen3:1.7b
-
-# Verify
-ollama list
+systemctl --user status llama-server
+journalctl --user -u llama-server -f
 ```
+
+See `guides/11-ollama-llm.md` for full model details, TurboQuant KV-cache tuning, and direct API usage.
 
 ## Updating
 
 ```bash
-sudo npm install -g openclaw@latest
-sudo systemctl restart openclaw
-openclaw --version
+# NemoClaw CLI + sandbox
+curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+nemoclaw onboard   # re-run onboarding if you need to recreate the sandbox
+
+# llama.cpp (TurboQuant fork) local inference
+bash nemoclaw/setup-openclaw.sh --with-llamacpp=<same-model-key>
 ```
+
+Avoid `openshell self-update`, `npm update -g openshell`, or `openshell sandbox create` directly —
+use `nemoclaw onboard` so NemoClaw's own lifecycle management stays consistent.
 
 ## Troubleshooting
 
-- **WebSocket disconnects**: Ensure the gateway token is set in Control UI
-- **Out of memory**: Use smaller models (`qwen3:1.7b` over `8b`), disable compositor
-- **Port conflict**: Change port in `openclaw.json` or service file
-- **Permission denied**: Check `/opt/openclaw/data` ownership is `openclawuser:openclawuser`
+- **`nemoclaw` not found after install**: `source ~/.bashrc` (or `~/.zshrc`), or open a new terminal
+- **Docker permission errors**: `sudo usermod -aG docker $(whoami) && newgrp docker`
+- **Low disk space**: unused Docker images/build cache are often reclaimable —
+  `docker system df` to inspect, `docker system prune -a --volumes` to clean up (review first!)
+- **llama-server won't start**: `journalctl --user -u llama-server -f` — first run downloads the GGUF and can take several minutes
+- **llama-server service doesn't survive logout**: `sudo loginctl enable-linger $(whoami)`
+- **Qwen3.5-9B unstable at 128K ctx**: switch `-ctv turbo3` → `-ctv turbo4` and drop context to 100K (see forum reference below)
 
 ## References
 
-- [OpenClaw GitHub](https://github.com/openclaw/openclaw)
-- [OpenClaw Docs](https://docs.openclaw.ai/)
-- [Jetson OpenClaw Guide](https://forums.developer.nvidia.com/t/openclaw-on-nvidia-jetson-orin-nano/361259)
-- [OpenClaw Releases](https://github.com/openclaw/openclaw/releases)
+- [NVIDIA/NemoClaw GitHub](https://github.com/NVIDIA/NemoClaw)
+- [NemoClaw Docs](https://docs.nvidia.com/nemoclaw/)
+- [NemoClaw Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html)
+- [OpenClaw Quickstart](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html)
+- [Hermes Quickstart](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html)
+- [llama-cpp-turboquant (TheTom)](https://github.com/TheTom/llama-cpp-turboquant)
+- [NVIDIA Forums: Qwen3.5 9B on Orin Nano Super w/ TurboQuant4](https://forums.developer.nvidia.com/t/weekend-home-lab-qwen3-5-9b-on-jetson-orin-nano-super-with-turboquant4-100k-token-window/366306)

@@ -1,17 +1,42 @@
 #!/usr/bin/env bash
 # ╔══════════════════════════════════════════════════════════════════════╗
-# ║  NanoClaw — OpenClaw installer for Jetson Orin Nano                  ║
+# ║  NemoClaw — NVIDIA NemoClaw installer for Jetson Orin Nano            ║
+# ║  https://github.com/NVIDIA/NemoClaw                                  ║
 # ║                                                                      ║
-# ║  Installs OpenClaw as a systemd service with a dedicated user,       ║
-# ║  optionally sets up Ollama for local inference.                      ║
+# ║  Runs the official NemoClaw installer (Node.js CLI + Docker/OpenShell║
+# ║  sandbox) and optionally builds a local llama.cpp (TurboQuant fork)  ║
+# ║  server you can select as a custom OpenAI-compatible provider during ║
+# ║  `nemoclaw onboard`.                                                 ║
 # ║                                                                      ║
-# ║  Usage:  bash nanoclaw/setup-openclaw.sh [--with-ollama]             ║
+# ║  Usage:  bash nemoclaw/setup-openclaw.sh [--with-llamacpp[=MODEL]]   ║
+# ║                                          [--list-models]              ║
+# ║                                                                      ║
+# ║  MODEL keys (see list_models below):                                 ║
+# ║    lfm2.5-2.6b   (default) · ling-3-tiny · gemma4-e4b · qwen3.5-9b   ║
+# ║                                                                      ║
+# ║  Env passthrough to the NemoClaw installer (all optional):           ║
+# ║    NEMOCLAW_AGENT      openclaw (default) | hermes | langchain-...  ║
+# ║    NEMOCLAW_PROVIDER   custom | ollama | vllm | openai | ...        ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "$0")/.." && pwd)"
-OPENCLAW_HOME="/opt/openclaw/data"
-OPENCLAW_PORT=18789
+
+LLAMACPP_DIR="${LLAMACPP_DIR:-$HOME/llama-cpp-turboquant}"
+LLAMACPP_REPO="https://github.com/TheTom/llama-cpp-turboquant"
+LLAMACPP_BRANCH="feature/turboquant-kv-cache"
+LLAMACPP_PORT="${LLAMACPP_PORT:-8080}"
+LLAMACPP_CACHE="${LLAMA_CACHE:-$HOME/.cache/llama.cpp}"
+
+# key -> "hf_repo|hf_quant|size|context|turboquant_kv|description"
+# hf_quant may be empty (repo ships a single default GGUF).
+declare -A MODELS=(
+    ["lfm2.5-2.6b"]="LiquidAI/LFM2.5-2.6B-GGUF||~1.8 GB|131072|turbo4|dense 2.6B, agentic-tuned — fastest, best default for a 24/7 gateway"
+    ["ling-3-tiny"]="SC117/Ling-3.0-tiny-abliterated-APEX-GGUF|APEX-I-Compact|~4.0 GB|65536|turbo4|7.9B MoE / 1.3B active, abliterated (uncensored)"
+    ["gemma4-e4b"]="google/gemma-4-E4B-it-qat-q4_0-gguf||~5.15 GB|131072|turbo4|multimodal (text/image/audio), verified on Orin Nano by NVIDIA"
+    ["qwen3.5-9b"]="mradermacher/Qwen3.5-9B-GGUF|Q4_K_M|~5.7 GB|100000|turbo4|dense 9B — needs TurboQuant KV (-ctv turbo3/turbo4) to fit 100K+ ctx on 8GB"
+)
+DEFAULT_MODEL_KEY="lfm2.5-2.6b"
 
 # ─── Colors ────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -26,220 +51,215 @@ preflight() {
     section "Preflight Checks"
 
     if ! command -v node &>/dev/null; then
-        error "Node.js is required. Run 'make node' from host/ first."
+        error "Node.js 22.19+ is required (NemoClaw's official installer can install it too)."
         exit 1
     fi
 
-    local node_major
-    node_major=$(node -v | sed 's/v//' | cut -d. -f1)
-    if [ "$node_major" -lt 22 ]; then
-        error "Node.js 22+ required (found: $(node -v)). Update via 'make node' in host/."
+    local node_version node_major node_minor
+    node_version=$(node -v | sed 's/v//')
+    node_major=$(echo "$node_version" | cut -d. -f1)
+    node_minor=$(echo "$node_version" | cut -d. -f2)
+    if [ "$node_major" -lt 22 ] || { [ "$node_major" -eq 22 ] && [ "$node_minor" -lt 19 ]; }; then
+        error "Node.js 22.19+ required (found: v$node_version)."
         exit 1
     fi
-
-    info "Node.js $(node -v) — OK"
+    info "Node.js v$node_version — OK"
 
     if ! command -v npm &>/dev/null; then
         error "npm is required."
         exit 1
     fi
-
     info "npm $(npm -v) — OK"
-}
 
-# ─── Install OpenClaw ──────────────────────────────────────────────
-install_openclaw() {
-    section "Installing OpenClaw"
-
-    if command -v openclaw &>/dev/null; then
-        local current_version
-        current_version=$(openclaw --version 2>/dev/null || echo "unknown")
-        warn "OpenClaw already installed: $current_version"
-        info "Upgrading to latest..."
-    fi
-
-    sudo npm install -g openclaw@latest
-    info "OpenClaw $(openclaw --version) installed"
-}
-
-# ─── Create system user ───────────────────────────────────────────
-create_user() {
-    section "System User & State Directory"
-
-    if id openclawuser &>/dev/null; then
-        info "User 'openclawuser' already exists"
+    if ! command -v docker &>/dev/null; then
+        warn "Docker not found. NemoClaw runs agents inside Docker/OpenShell sandboxes."
+        warn "Its installer can install Docker for you (will prompt for sudo)."
+    elif docker info &>/dev/null; then
+        info "Docker $(docker --version | sed 's/Docker version //;s/,.*//') — OK, accessible without sudo"
     else
-        sudo adduser \
-            --system \
-            --home "$OPENCLAW_HOME" \
-            --group \
-            --shell /usr/sbin/nologin \
-            openclawuser
-        info "Created system user 'openclawuser'"
+        warn "Docker is installed but not accessible without sudo or the daemon isn't running."
+        warn "You may need: sudo usermod -aG docker \$(whoami) && newgrp docker"
     fi
 
-    sudo mkdir -p "$OPENCLAW_HOME"
-    sudo chown -R openclawuser:openclawuser "$OPENCLAW_HOME"
-    sudo chmod 750 "$OPENCLAW_HOME"
-    info "State directory: $OPENCLAW_HOME"
+    local free_gb
+    free_gb=$(df -BG --output=avail "$HOME" 2>/dev/null | tail -1 | tr -dc '0-9')
+    if [ -n "$free_gb" ] && [ "$free_gb" -lt 8 ]; then
+        warn "Only ${free_gb}GB free disk space in \$HOME. Sandbox images and models can be large."
+    elif [ -n "$free_gb" ]; then
+        info "Disk space: ${free_gb}GB free — OK"
+    fi
 }
 
-# ─── Install Linuxbrew (for skill/tool installs) ──────────────────
-install_brew() {
-    section "Homebrew (Linuxbrew)"
+# ─── Install real NemoClaw (github.com/NVIDIA/NemoClaw) ──────────
+install_nemoclaw() {
+    section "NVIDIA NemoClaw"
 
-    if command -v brew &>/dev/null; then
-        info "Homebrew already installed: $(brew --version | head -1)"
+    if command -v nemoclaw &>/dev/null; then
+        warn "nemoclaw already installed: $(nemoclaw --version 2>/dev/null || echo unknown)"
+        info "Re-running the installer will update the CLI and can re-run onboarding."
+    fi
+
+    info "Running the official installer: curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash"
+    [ -n "${NEMOCLAW_AGENT:-}" ]    && info "NEMOCLAW_AGENT=$NEMOCLAW_AGENT"
+    [ -n "${NEMOCLAW_PROVIDER:-}" ] && info "NEMOCLAW_PROVIDER=$NEMOCLAW_PROVIDER"
+    info "This launches the guided onboard wizard (choose agent/provider/model interactively"
+    info "unless the NEMOCLAW_* env vars above are set for a non-interactive run)."
+
+    curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+
+    if command -v nemoclaw &>/dev/null; then
+        info "nemoclaw CLI installed: $(nemoclaw --version 2>/dev/null || echo unknown)"
     else
-        info "Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        warn "'nemoclaw' not found in this shell yet. Run: source ~/.bashrc (or ~/.zshrc), or open a new terminal."
     fi
-
-    # Create brew group and add users
-    sudo groupadd -f brew
-    sudo usermod -aG brew "$(whoami)"
-    sudo usermod -aG brew openclawuser
-    sudo chgrp -R brew /home/linuxbrew/.linuxbrew
-    sudo chmod -R g+w /home/linuxbrew/.linuxbrew
-    sudo find /home/linuxbrew/.linuxbrew -type d -exec chmod g+s {} \;
-
-    # Brew caches for openclawuser
-    sudo mkdir -p "$OPENCLAW_HOME/.cache/Homebrew" "$OPENCLAW_HOME/.logs/Homebrew"
-    sudo chown -R openclawuser:openclawuser "$OPENCLAW_HOME/.cache" "$OPENCLAW_HOME/.logs"
-    sudo chmod -R 750 "$OPENCLAW_HOME/.cache" "$OPENCLAW_HOME/.logs"
-
-    info "Homebrew configured for openclawuser"
 }
 
-# ─── Copy default config ──────────────────────────────────────────
-install_config() {
-    section "OpenClaw Configuration"
+# ─── llama.cpp (TurboQuant fork, optional local inference) ───────
+# Builds in $HOME (no sudo) and runs as a systemd --user service, so it can
+# be pointed to from NemoClaw onboarding as a "custom OpenAI-compatible
+# endpoint" provider (http://127.0.0.1:$LLAMACPP_PORT/v1).
+list_models() {
+    section "Available Models"
+    for key in "${!MODELS[@]}"; do
+        IFS='|' read -r repo quant size ctx ctv desc <<< "${MODELS[$key]}"
+        local ref="$repo"; [ -n "$quant" ] && ref="${repo}:${quant}"
+        printf "  %-14s %-8s ctx=%-7s %s\n" "$key" "$size" "$ctx" "$desc"
+        printf "                 hf: %s\n" "$ref"
+    done
+}
 
-    if [ -f "$OPENCLAW_HOME/openclaw.json" ]; then
-        warn "Config already exists at $OPENCLAW_HOME/openclaw.json — skipping"
+build_llamacpp() {
+    section "llama.cpp (TurboQuant fork) — Build"
+
+    if ! command -v cmake &>/dev/null || ! command -v git &>/dev/null; then
+        error "cmake and git are required. Run 'sudo apt install cmake git build-essential' first."
+        exit 1
+    fi
+
+    if [ -d "$LLAMACPP_DIR/.git" ]; then
+        info "llama-cpp-turboquant already cloned at $LLAMACPP_DIR. Updating..."
+        git -C "$LLAMACPP_DIR" fetch origin "$LLAMACPP_BRANCH"
+        git -C "$LLAMACPP_DIR" checkout "$LLAMACPP_BRANCH"
+        git -C "$LLAMACPP_DIR" pull --ff-only origin "$LLAMACPP_BRANCH"
     else
-        sudo cp "$DOTFILES/nanoclaw/openclaw.json" "$OPENCLAW_HOME/openclaw.json"
-        sudo chown openclawuser:openclawuser "$OPENCLAW_HOME/openclaw.json"
-        sudo chmod 640 "$OPENCLAW_HOME/openclaw.json"
-        info "Default config installed"
+        info "Cloning $LLAMACPP_REPO ($LLAMACPP_BRANCH) into $LLAMACPP_DIR..."
+        git clone --branch "$LLAMACPP_BRANCH" --depth 1 "$LLAMACPP_REPO" "$LLAMACPP_DIR"
     fi
+
+    info "Building for CUDA (Jetson Orin, sm_87)..."
+    cmake -B "$LLAMACPP_DIR/build" -S "$LLAMACPP_DIR" \
+        -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=87 -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$LLAMACPP_DIR/build" --config Release -j"$(nproc)"
+
+    if [ ! -x "$LLAMACPP_DIR/build/bin/llama-server" ]; then
+        error "Build failed — llama-server binary not found."
+        exit 1
+    fi
+    info "llama-server built at $LLAMACPP_DIR/build/bin/llama-server"
 }
 
-# ─── Onboarding ───────────────────────────────────────────────────
-run_onboard() {
-    section "OpenClaw Onboarding"
+install_llama_service() {
+    local key="${1:-$DEFAULT_MODEL_KEY}"
 
-    local OPENCLAW_BIN
-    OPENCLAW_BIN="$(command -v openclaw)"
+    if [ -z "${MODELS[$key]:-}" ]; then
+        error "Unknown model key: $key"
+        list_models
+        exit 1
+    fi
 
-    info "Running onboarding (skip daemon — we use our own systemd service)..."
-    sudo -u openclawuser sh -lc "
-        cd $OPENCLAW_HOME || exit 1
-        export OPENCLAW_HOME=$OPENCLAW_HOME
-        export HOME=$OPENCLAW_HOME
-        export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin
-        exec '$OPENCLAW_BIN' onboard --skip-daemon
-    "
+    IFS='|' read -r hf_repo hf_quant size ctx ctv desc <<< "${MODELS[$key]}"
+    local hf_ref="$hf_repo"; [ -n "$hf_quant" ] && hf_ref="${hf_repo}:${hf_quant}"
 
-    info "Onboarding complete"
-}
+    info "Selected model: $key ($size) — $desc"
+    info "HF ref: $hf_ref  |  context: $ctx  |  KV compression: -ctv $ctv"
 
-# ─── systemd service ──────────────────────────────────────────────
-install_service() {
-    section "systemd Service"
+    mkdir -p "$LLAMACPP_CACHE" "$HOME/.config/systemd/user"
 
-    sudo cp "$DOTFILES/nanoclaw/openclaw.service" /etc/systemd/system/openclaw.service
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now openclaw
+    cat > "$HOME/.config/systemd/user/llama-server.service" <<EOF
+[Unit]
+Description=llama.cpp (TurboQuant) inference server
+After=network-online.target
+Wants=network-online.target
 
-    # Wait for port to bind
-    info "Waiting for gateway to start..."
-    sleep 3
+[Service]
+Type=simple
+Environment=LLAMA_CACHE=$LLAMACPP_CACHE
+ExecStart=$LLAMACPP_DIR/build/bin/llama-server \\
+    -hf $hf_ref \\
+    -ngl 99 -fa on \\
+    -ctk q8_0 -ctv $ctv \\
+    -c $ctx \\
+    --host 127.0.0.1 --port $LLAMACPP_PORT
+Restart=on-failure
+RestartSec=5
 
-    if sudo systemctl is-active --quiet openclaw; then
-        info "OpenClaw gateway is running on http://127.0.0.1:$OPENCLAW_PORT/"
+[Install]
+WantedBy=default.target
+EOF
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now llama-server
+    loginctl enable-linger "$(whoami)" 2>/dev/null || warn "Could not enable linger — the service will stop when you log out. Run: sudo loginctl enable-linger \$(whoami)"
+
+    info "Waiting for server to start (first run downloads the GGUF — can take a while)..."
+    sleep 5
+    if systemctl --user is-active --quiet llama-server; then
+        info "llama-server running on http://127.0.0.1:$LLAMACPP_PORT/"
+        info "Use this as a custom OpenAI-compatible endpoint during 'nemoclaw onboard':"
+        info "  endpoint: http://127.0.0.1:$LLAMACPP_PORT/v1   model: (any name)   key: not-needed"
     else
-        warn "Service may still be starting. Check: sudo journalctl -u openclaw -f"
+        warn "Still starting/downloading. Check: journalctl --user -u llama-server -f"
     fi
 }
 
-# ─── Ollama (optional) ────────────────────────────────────────────
-install_ollama() {
-    section "Ollama (Local Inference)"
-
-    if command -v ollama &>/dev/null; then
-        info "Ollama already installed"
-    else
-        info "Installing Ollama..."
-        curl -fsSL https://ollama.com/install.sh | sh
-    fi
-
-    info "Pulling recommended model (qwen3:1.7b)..."
-    ollama pull qwen3:1.7b || warn "Could not pull model. Run 'ollama pull qwen3:1.7b' manually."
-
-    info "Ollama ready. Available models:"
-    ollama list 2>/dev/null || true
-}
-
-# ─── Print token ──────────────────────────────────────────────────
-print_token() {
-    section "Gateway Token"
-
-    local token
-    token=$(sudo -u openclawuser env \
-        OPENCLAW_HOME="$OPENCLAW_HOME" \
-        HOME="$OPENCLAW_HOME" \
-        openclaw config get gateway.auth.token 2>/dev/null || echo "")
-
-    if [ -n "$token" ]; then
-        info "Gateway token (paste into Control UI):"
-        echo ""
-        echo "  $token"
-        echo ""
-    else
-        warn "Token not yet generated. It will be available after first gateway start."
-        warn "Retrieve it with:"
-        echo "  sudo -u openclawuser env OPENCLAW_HOME=$OPENCLAW_HOME HOME=$OPENCLAW_HOME openclaw config get gateway.auth.token"
-    fi
+install_llamacpp() {
+    local model_key="${1:-$DEFAULT_MODEL_KEY}"
+    build_llamacpp
+    install_llama_service "$model_key"
 }
 
 # ─── Main ─────────────────────────────────────────────────────────
 main() {
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  NanoClaw — OpenClaw on Jetson Orin Nano                    ║"
-    echo "║  Latest stable: 2026.3.28                                   ║"
+    echo "║  NemoClaw — NVIDIA NemoClaw on Jetson Orin Nano             ║"
+    echo "║  https://github.com/NVIDIA/NemoClaw                         ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
 
     preflight
-    install_openclaw
-    create_user
-    install_brew
-    install_config
-    run_onboard
-    install_service
 
-    # Optional Ollama
-    if [[ "${1:-}" == "--with-ollama" ]]; then
-        install_ollama
-    else
-        info "Skipping Ollama. Run with --with-ollama to install, or manually later."
-    fi
+    # Optional llama.cpp (TurboQuant fork) local inference — build this
+    # BEFORE onboarding so the endpoint is ready to select as a provider.
+    case "${1:-}" in
+        --with-llamacpp)
+            install_llamacpp "$DEFAULT_MODEL_KEY"
+            ;;
+        --with-llamacpp=*)
+            install_llamacpp "${1#--with-llamacpp=}"
+            ;;
+        --list-models)
+            list_models
+            exit 0
+            ;;
+        *)
+            info "Skipping llama.cpp. Run with --with-llamacpp[=MODEL] first if you want a local"
+            info "custom-endpoint provider ready before onboarding. See models: $0 --list-models"
+            ;;
+    esac
 
-    print_token
+    install_nemoclaw
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  ✓ NanoClaw installation complete!                          ║"
+    echo "║  ✓ NemoClaw setup complete!                                 ║"
     echo "║                                                              ║"
-    echo "║  Control UI:  http://127.0.0.1:$OPENCLAW_PORT/                      ║"
+    echo "║  Next steps:                                                 ║"
+    echo "║    nemoclaw <name> connect   — chat with your sandbox        ║"
+    echo "║    openclaw tui               — (inside the sandbox shell)   ║"
     echo "║                                                              ║"
-    echo "║  Commands:                                                   ║"
-    echo "║    sudo systemctl status openclaw    — check status          ║"
-    echo "║    sudo journalctl -u openclaw -f    — view logs             ║"
-    echo "║    openclaw configure                — edit config           ║"
-    echo "║    openclaw update                   — update OpenClaw       ║"
+    echo "║  Local inference (if built):                                 ║"
+    echo "║    systemctl --user status llama-server                      ║"
+    echo "║    journalctl --user -u llama-server -f                      ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 }
 

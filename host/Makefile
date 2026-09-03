@@ -16,7 +16,7 @@
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
-.PHONY: all deps omz alacritty mold python node rust nanoclaw info clean
+.PHONY: all deps omz alacritty mold python node rust nemoclaw info clean
 
 # ── Latest version targets (update these as needed) ───────────────────
 PYTHON_VERSION   := 3.13
@@ -246,18 +246,18 @@ rust:
 	fi
 
 # =====================================================================
-#  nanoclaw — OpenClaw AI gateway (latest stable: 2026.3.28)
+#  nemoclaw — NVIDIA NemoClaw (github.com/NVIDIA/NemoClaw)
 # =====================================================================
-nanoclaw:
-	@echo -e "$(BLUE)━━━ NanoClaw (OpenClaw) ━━━$(NC)"
-	@if command -v openclaw &>/dev/null; then \
-		echo -e "$(YELLOW)[!]$(NC) OpenClaw already installed: $$(openclaw --version)"; \
-		echo "Upgrading to latest..."; \
+nemoclaw:
+	@echo -e "$(BLUE)━━━ NemoClaw (NVIDIA) ━━━$(NC)"
+	@if command -v nemoclaw &>/dev/null; then \
+		echo -e "$(YELLOW)[!]$(NC) nemoclaw already installed: $$(nemoclaw --version 2>/dev/null || echo unknown)"; \
+		echo "Re-running the installer to update..."; \
 	fi
-	sudo npm install -g openclaw@latest
-	@echo -e "$(GREEN)[✓]$(NC) OpenClaw $$(openclaw --version) installed"
-	@echo "  Run the full setup:  bash nanoclaw/setup-openclaw.sh"
-	@echo "  Or with Ollama:      bash nanoclaw/setup-openclaw.sh --with-ollama"
+	curl -fsSL https://www.nvidia.com/nemoclaw.sh | bash
+	@echo -e "$(GREEN)[✓]$(NC) nemoclaw installed"
+	@echo "  Full setup w/ local inference:  bash nemoclaw/setup-openclaw.sh --with-llamacpp"
+	@echo "  Connect to your sandbox:        nemoclaw <name> connect"
 
 # =====================================================================
 #  info — print installed versions
