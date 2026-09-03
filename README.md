@@ -18,7 +18,7 @@
  │──────────────────────────────────────────────────────────────────────────────────────────────────────────────│
  │                                                                                                              │
  │   platform ......... NVIDIA Jetson Orin Nano SUPER 8GB                                                       │
- │   os ............... Ubuntu 22.04 LTS (aarch64)                                                              │
+ │   os ............... Ubuntu 24.04 LTS (aarch64)                                                              │
  │   wm ............... bspwm + polybar + picom                                                                 │
  │   shell ............ zsh + oh-my-zsh + p10k                                                                  │
  │   editor ........... neovim                                                                                  │
@@ -30,15 +30,17 @@
 
 # Dotfiles — Jetson Orin Nano
 
-Configuration files for a development environment on **NVIDIA Jetson Orin Nano** running Ubuntu 22.04 LTS (aarch64).
+Configuration files for a development environment on **NVIDIA Jetson Orin Nano** running Ubuntu 24.04 LTS (aarch64), JetPack 7.2.1.
 
 ## Hardware
 
 | Spec       | Value                              |
 |------------|------------------------------------|
-| Host       | NVIDIA Jetson Orin Nano            |
-| OS         | Ubuntu 22.04.5 LTS aarch64        |
-| Kernel     | 5.15.148-tegra                     |
+| Host       | NVIDIA Jetson Orin Nano SUPER 8GB  |
+| OS         | Ubuntu 24.04 LTS aarch64           |
+| Kernel     | 6.8.12-tegra                       |
+| JetPack    | 7.2.1 (L4T r39.2.1)                |
+| CUDA       | 13.2.1                             |
 | CPU        | ARMv8 rev 1 (v8l) — 6 cores       |
 | Memory     | 8 GB                               |
 | Display    | 1920×1080                          |
@@ -322,7 +324,7 @@ This will:
 5. (Optional) Build a Docker image with `ros-melodic-desktop-full` + [ti_mmwave_rospkg](https://github.com/radar-lab/ti_mmwave_rospkg)
 
 > **Note:** ROS Melodic targets Ubuntu 18.04 (Bionic) and cannot be installed natively on
-> Ubuntu 22.04. The `--ros` flag uses Docker with device passthrough for serial port access.
+> Ubuntu 24.04. The `--ros` flag uses Docker with device passthrough for serial port access.
 
 After setup, verify:
 ```bash
