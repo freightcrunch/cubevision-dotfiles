@@ -106,11 +106,9 @@ dotfiles/
 │   ├── README.md
 │   ├── neo4j.conf
 │   └── setup-neo4j.sh
-├── nanoclaw/             # OpenClaw AI gateway for Jetson
+├── nemoclaw/             # NVIDIA NemoClaw (OpenClaw/Hermes/Deep Agents) for Jetson
 │   ├── README.md
-│   ├── setup-openclaw.sh
-│   ├── openclaw.service
-│   └── openclaw.json
+│   └── setup-openclaw.sh
 ├── guides/               # Jetson Orin Nano SUPER quick-ref guides
 │   ├── README.md            # Index
 │   ├── 01-flash-system.md   # Flash & upgrade to SUPER
@@ -123,7 +121,7 @@ dotfiles/
 │   ├── 08-pytorch.md        # PyTorch for JetPack
 │   ├── 09-tensorrt.md       # Model conversion & inference
 │   ├── 10-yolo.md           # YOLO deployment
-│   ├── 11-ollama-llm.md     # Local LLM inference
+│   ├── 11-ollama-llm.md     # Local LLM inference (llama.cpp TurboQuant)
 │   ├── 12-deepstream.md     # Video analytics
 │   └── 13-performance.md    # Power modes, clocks, tuning
 ├── host/                 # Host machine setup (Makefile)
@@ -212,22 +210,26 @@ make rust      # Rust nightly + tools
 make info      # print installed versions
 ```
 
-## NanoClaw (OpenClaw AI Gateway)
+## NemoClaw (NVIDIA Agent Sandbox)
 
-Local AI assistant powered by [OpenClaw](https://github.com/openclaw/openclaw) (**latest stable: 2026.3.28**).
+Always-on AI agent ([OpenClaw](https://openclaw.ai) by default, or Hermes/Deep Agents) running
+sandboxed via [NVIDIA NemoClaw](https://github.com/NVIDIA/NemoClaw) + Docker/OpenShell.
 
 ```bash
-# Quick install
-bash nanoclaw/setup-openclaw.sh
+# Optional: build a local llama.cpp (TurboQuant) inference server first
+bash nemoclaw/setup-openclaw.sh --with-llamacpp
 
-# With local Ollama inference
-bash nanoclaw/setup-openclaw.sh --with-ollama
+# Install NemoClaw + guided onboarding
+bash nemoclaw/setup-openclaw.sh
 
-# Or just install the binary via Makefile
-cd host/ && make nanoclaw
+# Or just install the CLI via Makefile
+cd host/ && make nemoclaw
+
+# Chat with your agent
+nemoclaw <sandbox-name> connect
 ```
 
-Runs as a systemd service on `http://127.0.0.1:18789/`. See `nanoclaw/README.md` for full docs.
+See `nemoclaw/README.md` for full docs.
 
 ## Databases
 
