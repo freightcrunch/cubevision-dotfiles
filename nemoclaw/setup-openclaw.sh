@@ -11,8 +11,15 @@
 # ║  Usage:  bash nemoclaw/setup-openclaw.sh [--with-llamacpp[=MODEL]]   ║
 # ║                                          [--list-models]              ║
 # ║                                                                      ║
-# ║  MODEL keys (see list_models below):                                 ║
-# ║    lfm2.5-2.6b   (default) · ling-3-tiny · gemma4-e4b · qwen3.5-9b   ║
+# ║  MODEL: a curated key (lfm2.5-2.6b · ling-3-tiny · gemma4-e4b ·      ║
+# ║  qwen3.5-9b), `auto` (default — best curated key as ranked by        ║
+# ║  whichllm for this hardware), or `top` (whichllm's #1 GGUF overall). ║
+# ║                                                                      ║
+# ║  Ranking env (all optional, github.com/Andyyyy64/whichllm):          ║
+# ║    WHICHLLM_GPU       simulated GPU (default "Jetson Orin Nano Super"║
+# ║                       — set empty to use whichllm's auto-detection)  ║
+# ║    WHICHLLM_PROFILE   general | coding | vision | math               ║
+# ║    WHICHLLM_CONTEXT   ctx used for fit estimation (default 8k)       ║
 # ║                                                                      ║
 # ║  Env passthrough to the NemoClaw installer (all optional):           ║
 # ║    NEMOCLAW_AGENT      openclaw (default) | hermes | langchain-...  ║
@@ -28,21 +35,45 @@ LLAMACPP_BRANCH="feature/turboquant-kv-cache"
 LLAMACPP_PORT="${LLAMACPP_PORT:-8080}"
 LLAMACPP_CACHE="${LLAMA_CACHE:-$HOME/.cache/llama.cpp}"
 
-# key -> "hf_repo|hf_quant|size|context|turboquant_kv|description"
-# hf_quant may be empty (repo ships a single default GGUF).
+# Curated, TurboQuant-tuned configs for 8 GB unified memory.
+# key -> "rank_id|hf_repo|hf_quant|size|context|turboquant_kv|description"
+#   rank_id  — HF model id whichllm scores (usually the base model); the
+#              GGUF hf_repo also matches whichllm's artifact_repo_id.
+#   hf_quant — may be empty (repo ships a single default GGUF).
+# Order is not hand-maintained: see rank_models / resolve_model.
 declare -A MODELS=(
-    ["lfm2.5-2.6b"]="LiquidAI/LFM2.5-2.6B-GGUF||~1.8 GB|131072|turbo4|dense 2.6B, agentic-tuned — fastest, best default for a 24/7 gateway"
-    ["ling-3-tiny"]="SC117/Ling-3.0-tiny-abliterated-APEX-GGUF|APEX-I-Compact|~4.0 GB|65536|turbo4|7.9B MoE / 1.3B active, abliterated (uncensored)"
-    ["gemma4-e4b"]="google/gemma-4-E4B-it-qat-q4_0-gguf||~5.15 GB|131072|turbo4|multimodal (text/image/audio), verified on Orin Nano by NVIDIA"
-    ["qwen3.5-9b"]="mradermacher/Qwen3.5-9B-GGUF|Q4_K_M|~5.7 GB|100000|turbo4|dense 9B — needs TurboQuant KV (-ctv turbo3/turbo4) to fit 100K+ ctx on 8GB"
+    ["lfm2.5-2.6b"]="LiquidAI/LFM2.5-2.6B|LiquidAI/LFM2.5-2.6B-GGUF||~1.8 GB|131072|turbo4|dense 2.6B, agentic-tuned — fastest, lightest 24/7 gateway"
+    ["ling-3-tiny"]="SC117/Ling-3.0-tiny-abliterated-APEX-GGUF|SC117/Ling-3.0-tiny-abliterated-APEX-GGUF|APEX-I-Compact|~4.0 GB|65536|turbo4|7.9B MoE / 1.3B active, abliterated (uncensored)"
+    ["gemma4-e4b"]="google/gemma-4-E4B-it|google/gemma-4-E4B-it-qat-q4_0-gguf||~5.15 GB|131072|turbo4|multimodal (text/image/audio), verified on Orin Nano by NVIDIA"
+    ["qwen3.5-9b"]="Qwen/Qwen3.5-9B|mradermacher/Qwen3.5-9B-GGUF|Q4_K_M|~5.7 GB|100000|turbo4|dense 9B — needs TurboQuant KV (-ctv turbo3/turbo4) to fit 100K+ ctx on 8GB"
 )
-DEFAULT_MODEL_KEY="lfm2.5-2.6b"
+# Tiebreak order for models whichllm can't score, and the whole order when
+# whichllm is unavailable (offline). The first entry is the offline default.
+MODEL_KEYS=("lfm2.5-2.6b" "gemma4-e4b" "qwen3.5-9b" "ling-3-tiny")
+
+# ─── whichllm (hardware-aware model ranking) ─────────────────────
+# Scores models from merged live benchmarks (LiveBench, Artificial Analysis,
+# Aider, Arena) × quant penalty × evidence confidence × fit × speed.
+# Jetson unified memory isn't reliably auto-detected, so simulate it by
+# default, and pass --gpu-only since partial offload is meaningless there.
+# Rank at a short context: whichllm assumes an fp16 KV cache, while the
+# context actually served below relies on TurboQuant KV compression.
+WHICHLLM="${WHICHLLM:-whichllm}"
+WHICHLLM_GPU="${WHICHLLM_GPU-Jetson Orin Nano Super}"
+WHICHLLM_PROFILE="${WHICHLLM_PROFILE:-general}"
+WHICHLLM_CONTEXT="${WHICHLLM_CONTEXT:-8k}"
+WHICHLLM_TOP="${WHICHLLM_TOP:-100}"
+WHICHLLM_JSON=""
+WHICHLLM_FAILED=""
+# Served context/KV type for `top` picks (not in the curated table).
+LLAMACPP_CTX="${LLAMACPP_CTX:-32768}"
+LLAMACPP_CTV="${LLAMACPP_CTV:-turbo4}"
 
 # ─── Colors ────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; NC='\033[0m'
 info()    { echo -e "${GREEN}[✓]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $*" >&2; }
 error()   { echo -e "${RED}[✗]${NC} $*" >&2; }
 section() { echo -e "\n${BLUE}━━━ $* ━━━${NC}"; }
 
@@ -114,20 +145,186 @@ install_nemoclaw() {
     fi
 }
 
+# ─── Model ranking (whichllm) ────────────────────────────────────
+ensure_whichllm() {
+    command -v "${WHICHLLM%% *}" &>/dev/null && return 0
+
+    if ! command -v uv &>/dev/null; then
+        info "Installing uv (user-local) to manage whichllm..." >&2
+        curl -LsSf https://astral.sh/uv/install.sh | sh >&2 || return 1
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
+    info "Installing whichllm: uv tool install whichllm" >&2
+    uv tool install whichllm >&2 || return 1
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v "${WHICHLLM%% *}" &>/dev/null
+}
+
+# Runs whichllm at most once per invocation, saving its JSON to WHICHLLM_JSON.
+# Returns non-zero if ranking is unavailable. Call it in the current shell
+# (not inside $(...)) before the rank_* helpers so the result is cached.
+whichllm_rank() {
+    [ -n "$WHICHLLM_JSON" ] && return 0
+    [ -n "$WHICHLLM_FAILED" ] && return 1
+    WHICHLLM_FAILED=1
+    if ! command -v python3 &>/dev/null; then
+        warn "python3 not found — can't parse whichllm output; using curated order."
+        return 1
+    fi
+    if ! ensure_whichllm; then
+        warn "whichllm unavailable — using curated order."
+        return 1
+    fi
+
+    local args=(--gpu-only --json --top "$WHICHLLM_TOP"
+                --profile "$WHICHLLM_PROFILE" --context-length "$WHICHLLM_CONTEXT")
+    [ -n "$WHICHLLM_GPU" ] && args+=(--gpu "$WHICHLLM_GPU")
+
+    local out
+    out="$(mktemp)"
+    # WHICHLLM may be a multi-word command (e.g. WHICHLLM="uvx whichllm@latest").
+    # shellcheck disable=SC2086
+    if ! $WHICHLLM "${args[@]}" >"$out" 2>/dev/null \
+        || ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))["models"]' "$out" 2>/dev/null; then
+        warn "whichllm ranking failed (gpu: ${WHICHLLM_GPU:-auto-detect}) — using curated order."
+        rm -f "$out"
+        return 1
+    fi
+    WHICHLLM_JSON="$out"
+    WHICHLLM_FAILED=""
+}
+
+# Prints curated keys best-first as "key<TAB>score<TAB>tok/s<TAB>size".
+# Scored models sort by whichllm quality_score; unscored ones follow in
+# MODEL_KEYS order.
+rank_models() {
+    local key rank_id hf_repo size rows=""
+    for key in "${MODEL_KEYS[@]}"; do
+        IFS='|' read -r rank_id hf_repo _ size _ <<< "${MODELS[$key]}"
+        rows+="${key}"$'\t'"${rank_id}"$'\t'"${hf_repo}"$'\t'"${size}"$'\n'
+    done
+
+    if ! whichllm_rank; then
+        printf '%s' "$rows" | awk -F'\t' 'NF { printf "%s\t-\t-\t%s\n", $1, $4 }'
+        return 0
+    fi
+
+    printf '%s' "$rows" | python3 -c '
+import json, sys
+
+by_id = {}
+for m in json.load(open(sys.argv[1]))["models"]:  # best-first
+    for mid in (m.get("model_id"), m.get("artifact_repo_id")):
+        if mid:
+            by_id.setdefault(mid.lower(), m)
+
+ranked, unranked = [], []
+for i, line in enumerate(l for l in sys.stdin.read().splitlines() if l):
+    key, rank_id, hf_repo, size = line.split("\t")
+    m = by_id.get(rank_id.lower()) or by_id.get(hf_repo.lower())
+    if m:
+        ranked.append((-m["quality_score"], i, key, "%.1f" % m["quality_score"],
+                       "%.0f" % m["estimated_tok_per_sec"], size))
+    else:
+        unranked.append((0, i, key, "-", "-", size))
+
+for row in sorted(ranked) + unranked:
+    print("\t".join(row[2:]))
+' "$WHICHLLM_JSON"
+}
+
+# Prints whichllm's best GGUF picks (loadable via llama-server -hf) as
+# "hf_repo<TAB>quant<TAB>score<TAB>tok/s<TAB>size<TAB>model_id".
+top_gguf_models() {
+    whichllm_rank || return 1
+    python3 -c '
+import json, sys
+
+n = int(sys.argv[2])
+for m in json.load(open(sys.argv[1]))["models"]:
+    if not m.get("artifact_repo_id"):
+        continue
+    print("\t".join([m["artifact_repo_id"], m["quant_type"], "%.1f" % m["quality_score"],
+                     "%.0f" % m["estimated_tok_per_sec"], "~%.1f GB" % (m["file_size_bytes"] / 1e9),
+                     m["model_id"]]))
+    n -= 1
+    if n == 0:
+        break
+' "$WHICHLLM_JSON" "${1:-5}"
+}
+
+list_models() {
+    section "Curated Models — ranked by whichllm (gpu: ${WHICHLLM_GPU:-auto-detect}, profile: $WHICHLLM_PROFILE)"
+    whichllm_rank || true
+    local ranking
+    ranking="$(rank_models)"
+
+    printf "  %-3s %-13s %-6s %-6s %-9s %-7s %s\n" "#" "key" "score" "tok/s" "size" "ctx" "description"
+    local i=0 key score toks size repo quant ctx desc
+    while IFS=$'\t' read -r key score toks size; do
+        i=$((i + 1))
+        IFS='|' read -r _ repo quant _ ctx _ desc <<< "${MODELS[$key]}"
+        [ -n "$quant" ] && repo="${repo}:${quant}"
+        printf "  %-3s %-13s %-6s %-6s %-9s %-7s %s\n" "$i" "$key" "$score" "$toks" "$size" "$ctx" "$desc"
+        printf "      hf: %s\n" "$repo"
+    done <<< "$ranking"
+    echo "  score '-' = not in whichllm's benchmark set (ordered by MODEL_KEYS)"
+
+    if [ -n "$WHICHLLM_JSON" ]; then
+        section "whichllm Top GGUF Picks (install #1 with --with-llamacpp=top)"
+        local picks mid
+        picks="$(top_gguf_models 5)"
+        while IFS=$'\t' read -r repo quant score toks size mid; do
+            printf "  %-6s %-6s %-9s %s:%s\n" "$score" "$toks" "$size" "$repo" "$quant"
+        done <<< "$picks"
+    fi
+}
+
+# Resolves a model selector (curated key | auto | top) into MODEL_* globals.
+resolve_model() {
+    local sel="${1:-auto}"
+
+    whichllm_rank || true
+
+    if [ "$sel" = "auto" ]; then
+        sel="$(rank_models | awk -F'	' 'NR == 1 { print $1 }')"
+        info "Auto-selected '$sel' — best-ranked curated model (see --list-models)"
+    elif [ "$sel" = "top" ]; then
+        local row repo quant score toks size mid
+        row="$(top_gguf_models 1)" || true
+        if [ -z "$row" ]; then
+            error "whichllm returned no GGUF pick — use a curated key instead."
+            exit 1
+        fi
+        IFS=$'\t' read -r repo quant score toks size mid <<< "$row"
+        MODEL_LABEL="$mid"
+        MODEL_HF_REF="${repo}:${quant}"
+        MODEL_SIZE="$size"
+        MODEL_CTX="$LLAMACPP_CTX"
+        MODEL_CTV="$LLAMACPP_CTV"
+        MODEL_DESC="whichllm #1 GGUF (score $score, ~$toks tok/s est.)"
+        return 0
+    fi
+
+    if [ -z "${MODELS[$sel]:-}" ]; then
+        error "Unknown model: $sel"
+        list_models
+        exit 1
+    fi
+
+    local hf_repo hf_quant
+    IFS='|' read -r _ hf_repo hf_quant MODEL_SIZE MODEL_CTX MODEL_CTV MODEL_DESC <<< "${MODELS[$sel]}"
+    MODEL_LABEL="$sel"
+    MODEL_HF_REF="$hf_repo"
+    if [ -n "$hf_quant" ]; then
+        MODEL_HF_REF="${hf_repo}:${hf_quant}"
+    fi
+}
+
 # ─── llama.cpp (TurboQuant fork, optional local inference) ───────
 # Builds in $HOME (no sudo) and runs as a systemd --user service, so it can
 # be pointed to from NemoClaw onboarding as a "custom OpenAI-compatible
 # endpoint" provider (http://127.0.0.1:$LLAMACPP_PORT/v1).
-list_models() {
-    section "Available Models"
-    for key in "${!MODELS[@]}"; do
-        IFS='|' read -r repo quant size ctx ctv desc <<< "${MODELS[$key]}"
-        local ref="$repo"; [ -n "$quant" ] && ref="${repo}:${quant}"
-        printf "  %-14s %-8s ctx=%-7s %s\n" "$key" "$size" "$ctx" "$desc"
-        printf "                 hf: %s\n" "$ref"
-    done
-}
-
 build_llamacpp() {
     section "llama.cpp (TurboQuant fork) — Build"
 
@@ -158,19 +355,11 @@ build_llamacpp() {
     info "llama-server built at $LLAMACPP_DIR/build/bin/llama-server"
 }
 
+# Expects MODEL_* globals set by resolve_model.
 install_llama_service() {
-    local key="${1:-$DEFAULT_MODEL_KEY}"
+    local hf_ref="$MODEL_HF_REF" ctx="$MODEL_CTX" ctv="$MODEL_CTV"
 
-    if [ -z "${MODELS[$key]:-}" ]; then
-        error "Unknown model key: $key"
-        list_models
-        exit 1
-    fi
-
-    IFS='|' read -r hf_repo hf_quant size ctx ctv desc <<< "${MODELS[$key]}"
-    local hf_ref="$hf_repo"; [ -n "$hf_quant" ] && hf_ref="${hf_repo}:${hf_quant}"
-
-    info "Selected model: $key ($size) — $desc"
+    info "Selected model: $MODEL_LABEL ($MODEL_SIZE) — $MODEL_DESC"
     info "HF ref: $hf_ref  |  context: $ctx  |  KV compression: -ctv $ctv"
 
     mkdir -p "$LLAMACPP_CACHE" "$HOME/.config/systemd/user"
@@ -213,9 +402,10 @@ EOF
 }
 
 install_llamacpp() {
-    local model_key="${1:-$DEFAULT_MODEL_KEY}"
+    # Resolve before the (slow) build so a bad selector fails fast.
+    resolve_model "${1:-auto}"
     build_llamacpp
-    install_llama_service "$model_key"
+    install_llama_service
 }
 
 # ─── Main ─────────────────────────────────────────────────────────
@@ -226,20 +416,23 @@ main() {
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
 
+    trap 'rm -f "$WHICHLLM_JSON"' EXIT
+
+    if [ "${1:-}" = "--list-models" ]; then
+        list_models
+        exit 0
+    fi
+
     preflight
 
     # Optional llama.cpp (TurboQuant fork) local inference — build this
     # BEFORE onboarding so the endpoint is ready to select as a provider.
     case "${1:-}" in
         --with-llamacpp)
-            install_llamacpp "$DEFAULT_MODEL_KEY"
+            install_llamacpp auto
             ;;
         --with-llamacpp=*)
             install_llamacpp "${1#--with-llamacpp=}"
-            ;;
-        --list-models)
-            list_models
-            exit 0
             ;;
         *)
             info "Skipping llama.cpp. Run with --with-llamacpp[=MODEL] first if you want a local"

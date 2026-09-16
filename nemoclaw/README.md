@@ -35,9 +35,10 @@ select during onboarding — giving you fully local/offline inference on Jetson'
 # Optional: build + run a local llama.cpp (TurboQuant) inference server first,
 # so it's ready to select as a "custom OpenAI-compatible endpoint" during onboarding.
 chmod +x nemoclaw/setup-openclaw.sh
-bash nemoclaw/setup-openclaw.sh --with-llamacpp            # default model: LFM2.5-2.6B
-bash nemoclaw/setup-openclaw.sh --with-llamacpp=gemma4-e4b # pick a specific model
-bash nemoclaw/setup-openclaw.sh --list-models              # see all model keys
+bash nemoclaw/setup-openclaw.sh --with-llamacpp            # auto: best curated model per whichllm
+bash nemoclaw/setup-openclaw.sh --with-llamacpp=gemma4-e4b # pick a specific curated model
+bash nemoclaw/setup-openclaw.sh --with-llamacpp=top        # whichllm's #1 GGUF, even if not curated
+bash nemoclaw/setup-openclaw.sh --list-models              # ranked curated models + top GGUF picks
 
 # Install NemoClaw + run guided onboarding (interactive by default)
 bash nemoclaw/setup-openclaw.sh
@@ -83,10 +84,36 @@ and enter:
 
 | Model key | Params | Size | Context | Notes |
 |---|---|---|---|---|
-| `lfm2.5-2.6b` (default) | 2.6B dense | ~1.8 GB | 128K | Agentic-tuned, fastest, lightest |
+| `lfm2.5-2.6b` (offline default) | 2.6B dense | ~1.8 GB | 128K | Agentic-tuned, fastest, lightest |
 | `ling-3-tiny` | 7.9B MoE / 1.3B active | ~4.0 GB | 64K | Abliterated (uncensored) |
 | `gemma4-e4b` | 4.5B effective / 8B | ~5.15 GB | 128K | Multimodal, verified on Orin Nano by NVIDIA |
 | `qwen3.5-9b` | 9B dense | ~5.7 GB | 100K (turbo4) / 128K (turbo3) | Needs TurboQuant KV to fit long context on 8 GB |
+
+### How models are ranked
+
+Model choice is ranked by [whichllm](https://github.com/Andyyyy64/whichllm) instead of a
+hard-coded default. whichllm scores each model from merged benchmarks (LiveBench, Artificial
+Analysis, Aider, Arena ELO, etc.), then adjusts for quantization, evidence confidence, runtime fit
+and estimated tok/s on the target hardware. The script installs it with `uv tool install whichllm`
+if it's missing (or run `cd host && make whichllm`).
+
+- **Curated keys** (table above) keep their TurboQuant-tuned context/KV settings. They're sorted by
+  whichllm `quality_score`, matched on their base HF model id or GGUF repo. Models whichllm doesn't
+  benchmark show `-` and fall back to the `MODEL_KEYS` order in the script.
+- **`auto`** (the default for `--with-llamacpp`) installs the top-ranked curated key. If whichllm
+  is unavailable (offline, no `python3`), it falls back to `MODEL_KEYS[0]` (`lfm2.5-2.6b`).
+- **`top`** installs whichllm's best runnable GGUF overall, served at `LLAMACPP_CTX` (default
+  32768) with `-ctv $LLAMACPP_CTV` (default `turbo4`).
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `WHICHLLM_GPU` | `Jetson Orin Nano Super` | Simulated GPU. Set to empty (`WHICHLLM_GPU=`) to auto-detect |
+| `WHICHLLM_PROFILE` | `general` | `general` \| `coding` \| `vision` \| `math` |
+| `WHICHLLM_CONTEXT` | `8k` | Context whichllm uses to check fit. Kept short because whichllm assumes an fp16 KV cache, while TurboQuant compresses it |
+| `WHICHLLM_TOP` | `100` | Number of candidates to score |
+| `WHICHLLM` | `whichllm` | Command to run, e.g. `WHICHLLM="uvx whichllm@latest"` |
+
+Ranking always passes `--gpu-only`, since partial CPU offload doesn't help on Jetson unified memory.
 
 The server builds under `~/llama-cpp-turboquant` (no `sudo` needed) and runs as a **systemd `--user`
 service** (`llama-server`), so it survives logout only if linger is enabled — the script does this
@@ -108,6 +135,9 @@ nemoclaw onboard   # re-run onboarding if you need to recreate the sandbox
 
 # llama.cpp (TurboQuant fork) local inference
 bash nemoclaw/setup-openclaw.sh --with-llamacpp=<same-model-key>
+
+# whichllm + a fresh ranking (benchmarks change; cache TTL is 6-24h)
+cd host && make whichllm && cd - && bash nemoclaw/setup-openclaw.sh --list-models
 ```
 
 Avoid `openshell self-update`, `npm update -g openshell`, or `openshell sandbox create` directly —
@@ -130,5 +160,6 @@ use `nemoclaw onboard` so NemoClaw's own lifecycle management stays consistent.
 - [NemoClaw Prerequisites](https://docs.nvidia.com/nemoclaw/latest/get-started/prerequisites.html)
 - [OpenClaw Quickstart](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart.html)
 - [Hermes Quickstart](https://docs.nvidia.com/nemoclaw/latest/get-started/quickstart-hermes.html)
+- [whichllm](https://github.com/Andyyyy64/whichllm)
 - [llama-cpp-turboquant (TheTom)](https://github.com/TheTom/llama-cpp-turboquant)
 - [NVIDIA Forums: Qwen3.5 9B on Orin Nano Super w/ TurboQuant4](https://forums.developer.nvidia.com/t/weekend-home-lab-qwen3-5-9b-on-jetson-orin-nano-super-with-turboquant4-100k-token-window/366306)

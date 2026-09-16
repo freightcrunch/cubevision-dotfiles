@@ -5,3 +5,4 @@ resources:
   - network-health-monitor.yaml
   - flux-image-automation.yaml
   - actions-runner-controller.yaml
+  - freightcrunch-repo-sync.yaml

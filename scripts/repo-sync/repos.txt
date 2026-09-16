@@ -1,0 +1,10 @@
+# freightcrunch repositories kept in sync by scripts/repo-sync/sync-repos.sh
+# (scheduled via .github/workflows/sync-freightcrunch-repos.yml on the ARC
+# runner set in infra/helm/apps/freightcrunch-repo-sync.yaml).
+#
+# One "owner/repo" per line. The default branch is detected from the remote,
+# so no branch column is needed. Blank lines and # comments are ignored.
+freightcrunch/postalentry
+freightcrunch/pkg_unwrapper
+freightcrunch/import-analyst-be
+freightcrunch/PayCBP

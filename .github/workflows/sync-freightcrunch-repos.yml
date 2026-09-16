@@ -1,0 +1,42 @@
+# Periodically pulls the latest freightcrunch repositories into bare mirrors on
+# the build server. Runs on the self-hosted ARC runner set deployed by Flux/Helm
+# (infra/helm/apps/freightcrunch-repo-sync.yaml), which mounts the persistent
+# `freightcrunch-mirrors` volume at /mirrors. See AGENTS.md → "Repo sync".
+#
+# SECURITY: this repository is PUBLIC, so run logs and job summaries are public.
+# The synced repos are private — never enable SYNC_VERBOSE (commit subjects) here,
+# and never add pull_request triggers that could land fork code on this runner.
+name: sync-freightcrunch-repos
+
+on:
+  schedule:
+    - cron: "23 */4 * * *" # every 4 hours
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-freightcrunch-repos
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Skip on the upstream n-drw fork (no runner set there — the job would queue forever).
+    if: github.repository == 'freightcrunch/cubevision-dotfiles'
+    runs-on: freightcrunch-sync
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/repo-sync
+
+      - name: Sync mirrors
+        env:
+          # Fine-grained PAT (or GitHub App token), read-only "Contents" + "Metadata"
+          # on the repos listed in scripts/repo-sync/repos.txt.
+          GH_TOKEN: ${{ secrets.FREIGHTCRUNCH_SYNC_TOKEN }}
+          SYNC_MODE: mirror
+          SYNC_VERBOSE: "0"
+          GIT_TERMINAL_PROMPT: "0"
+        run: bash scripts/repo-sync/sync-repos.sh /mirrors

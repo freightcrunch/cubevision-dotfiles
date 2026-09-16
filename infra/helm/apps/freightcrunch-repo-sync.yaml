@@ -1,0 +1,79 @@
+---
+# Self-hosted runner set for the scheduled freightcrunch repo sync
+# (.github/workflows/sync-freightcrunch-repos.yml in freightcrunch/cubevision-dotfiles).
+# Reuses the ARC controller + `arc-github-auth` secret from
+# actions-runner-controller.yaml. The PAT owner needs admin on
+# freightcrunch/cubevision-dotfiles to register repo-scoped runners.
+#
+# Default (non-kubernetes) container mode: the job runs directly in the runner
+# pod, so it can mount the mirrors PVC. maxRunners=1 because the volume is RWO
+# and the workflow serialises via `concurrency` anyway.
+#
+# Consumers (Tekton tasks, agents on the build server) can mount the same PVC
+# read-only and `git clone /mirrors/<repo>.git`.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: freightcrunch-mirrors
+  namespace: arc-runners
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: arc-freightcrunch-sync
+  namespace: arc-runners
+spec:
+  interval: 30m
+  # The installation name is the `runs-on` label used by the workflow.
+  releaseName: freightcrunch-sync
+  dependsOn:
+    - name: arc-controller
+      namespace: arc-systems
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      version: ">=0.9.0 <1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: actions-runner-controller
+        namespace: flux-system
+      interval: 12h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    githubConfigUrl: https://github.com/freightcrunch/cubevision-dotfiles
+    githubConfigSecret: arc-github-auth
+    minRunners: 0
+    maxRunners: 1
+    template:
+      spec:
+        securityContext:
+          fsGroup: 1001 # runner user; lets it write to /mirrors
+        containers:
+          - name: runner
+            image: ghcr.io/actions/actions-runner:latest
+            command: ["/home/runner/run.sh"]
+            resources:
+              requests:
+                cpu: 250m
+                memory: 256Mi
+              limits:
+                cpu: "1"
+                memory: 1Gi
+            volumeMounts:
+              - name: mirrors
+                mountPath: /mirrors
+        volumes:
+          - name: mirrors
+            persistentVolumeClaim:
+              claimName: freightcrunch-mirrors

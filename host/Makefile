@@ -10,13 +10,14 @@
 # ║    make python      — install latest Python via deadsnakes PPA       ║
 # ║    make node        — install latest Node.js via fnm                 ║
 # ║    make rust        — install Rust nightly via rustup                ║
+# ║    make whichllm    — install/upgrade whichllm (LLM ranking) via uv  ║
 # ║    make deps        — install system build dependencies              ║
 # ║    make info        — print installed versions                       ║
 # ╚══════════════════════════════════════════════════════════════════════╝
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
-.PHONY: all deps omz alacritty mold python node rust nemoclaw info clean
+.PHONY: all deps omz alacritty mold python node rust nemoclaw whichllm info clean
 
 # ── Latest version targets (update these as needed) ───────────────────
 PYTHON_VERSION   := 3.13
@@ -260,6 +261,22 @@ nemoclaw:
 	@echo "  Connect to your sandbox:        nemoclaw <name> connect"
 
 # =====================================================================
+#  whichllm — hardware-aware LLM ranking (github.com/Andyyyy64/whichllm)
+#  Used by nemoclaw/setup-openclaw.sh to rank local llama.cpp models.
+# =====================================================================
+whichllm:
+	@echo -e "$(BLUE)━━━ whichllm ━━━$(NC)"
+	@if ! command -v uv &>/dev/null; then \
+		echo -e "$(YELLOW)[!]$(NC) uv not found — installing (user-local)..."; \
+		curl -LsSf https://astral.sh/uv/install.sh | sh; \
+	fi
+	@export PATH="$$HOME/.local/bin:$$PATH" && \
+		if command -v whichllm &>/dev/null; then uv tool upgrade whichllm; else uv tool install whichllm; fi && \
+		echo -e "$(GREEN)[✓]$(NC) whichllm $$(whichllm --version)"
+	@echo "  Rank models for this board:  whichllm --gpu \"Jetson Orin Nano Super\" --gpu-only"
+	@echo "  Ranked curated models:       bash nemoclaw/setup-openclaw.sh --list-models"
+
+# =====================================================================
 #  info — print installed versions
 # =====================================================================
 info:
@@ -274,6 +291,7 @@ info:
 		eval "$$(fnm env 2>/dev/null)" 2>/dev/null && \
 		echo -e "  node:    $$(node --version)" || echo "  node:    not installed"
 	@command -v openclaw &>/dev/null && echo -e "  openclaw: $$(openclaw --version)" || echo "  openclaw: not installed"
+	@command -v whichllm &>/dev/null && echo -e "  whichllm: $$(whichllm --version)" || echo "  whichllm: not installed"
 	@echo ""
 
 # =====================================================================
