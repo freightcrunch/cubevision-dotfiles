@@ -249,9 +249,32 @@ install_pytorch() {
     info "Smoke test available at: $DOTFILES/pytorch/torch-test.py"
 }
 
-# ─── mmWave Radar ────────────────────────────────────────────────
+# ─── mmWave Radar — AWR6243 / IWR6243 (57-64 GHz front end) ─────
+install_awr6243() {
+    section "mmWave Radar (AWR6243 / IWR6243)"
+
+    chmod +x "$DOTFILES/mmwave/setup-awr6243.sh"
+    chmod +x "$DOTFILES/mmwave/awr6243/radar-ctl.sh"
+    info "AWR6243 host setup script ready at:"
+    info "  $DOTFILES/mmwave/setup-awr6243.sh"
+    info ""
+    info "The xWR6243 is a front-end-only MMIC: no on-chip MCU/DSP, no UART CLI."
+    info "The host is the SPI master and downloads the device firmware after"
+    info "every reset, then captures raw ADC samples over MIPI CSI-2."
+    info ""
+    info "Run it manually when you're ready:"
+    info "  bash $DOTFILES/mmwave/setup-awr6243.sh                  # host setup"
+    info "  bash $DOTFILES/mmwave/setup-awr6243.sh --check          # readiness report"
+    info "  bash $DOTFILES/mmwave/setup-awr6243.sh --dfp <dfp.zip>  # stage TI firmware"
+    info "  bash $DOTFILES/mmwave/awr6243/radar-ctl.sh boot spi     # strap SOP + reset"
+    info ""
+    info "Datasheet: https://www.ti.com/lit/ds/symlink/iwr6243.pdf (SWRS283A)"
+    info "See mmwave/README.md for wiring, boot modes and bring-up order."
+}
+
+# ─── mmWave Radar — legacy RS-2944A / AWR2944 (UART demo path) ──
 install_mmwave() {
-    section "mmWave Radar (RS-2944A / AWR2944)"
+    section "mmWave Radar (legacy RS-2944A / AWR2944)"
 
     chmod +x "$DOTFILES/mmwave/setup-mmwave.sh"
     info "mmWave setup script ready at:"
@@ -262,6 +285,7 @@ install_mmwave() {
     info "  bash $DOTFILES/mmwave/setup-mmwave.sh --ros         # with ROS Melodic (Docker)"
     info "  bash $DOTFILES/mmwave/setup-mmwave.sh --check       # check current state"
     info ""
+    info "For an AWR6243 board use --awr6243 instead (different device class)."
     info "See mmwave/README.md for full documentation."
 }
 
@@ -416,7 +440,7 @@ install_git() {
 
 # ─── Main ─────────────────────────────────────────────────────────
 usage() {
-    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --mmwave | --nemoclaw | --infra | --jetpack]"
+    echo "Usage: $0 [--all | --packages | --zsh | --ranger | --bspwm | --rust | --python | --js | --pytorch | --awr6243 | --mmwave | --nemoclaw | --infra | --jetpack]"
     echo "  No arguments = install everything"
 }
 
@@ -438,6 +462,7 @@ main() {
         install_python
         install_js
         install_pytorch
+        install_awr6243
         install_mmwave
         install_nemoclaw
         install_infra
@@ -453,6 +478,7 @@ main() {
                 --python)   install_python ;;
                 --js)       install_js ;;
                 --pytorch)  install_pytorch ;;
+                --awr6243)  install_awr6243 ;;
                 --mmwave)   install_mmwave ;;
                 --nemoclaw) install_nemoclaw ;;
                 --infra)    install_infra ;;
@@ -473,7 +499,7 @@ main() {
     echo "║  2. Run 'p10k configure' to set up your prompt              ║"
     echo "║  3. Select bspwm from your display manager                   ║"
     echo "║  4. Run the PyTorch installer when ready                     ║"
-    echo "║  5. Run mmwave/setup-mmwave.sh for radar driver              ║"
+    echo "║  5. Run mmwave/setup-awr6243.sh for the AWR6243 radar host    ║"
     echo "║  6. Run nemoclaw/setup-openclaw.sh for AI gateway             ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
 }

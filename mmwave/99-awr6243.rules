@@ -1,0 +1,53 @@
+# ─── udev rules for TI AWR6243 / IWR6243 host-side interfaces ─────────────
+#
+# The xWR6243 is a FRONT-END-ONLY MMIC (no R4F MCU, no C674x DSP, no UART
+# CLI, no USB bridge on the device itself). Everything is driven by the host:
+#
+#   * SPI   — the radar is the SPI *peripheral*; the host SoC is the master
+#             (control, firmware download, configuration)
+#   * CSI-2 — 4 data + 1 clock MIPI D-PHY lane pair carry raw ADC samples
+#   * GPIO  — NRESET, SOP0/1/2 (boot mode), SPI_HOST_INTR_1, NERROR_OUT
+#
+# So, unlike 99-mmwave-radar.rules (CP2105 UART path for the RS-2944A), these
+# rules grant non-root access to the *host's* interfaces, not to a USB port.
+#
+# Covered:
+#   /dev/spidev<bus>.<cs>   SPI master (e.g. Jetson 40-pin header)
+#   /dev/gpiochip*          NRESET / SOP / HOST_INTR / NERROR lines
+#   /dev/i2c-*              optional I2C control path (SOP = 1 1 1)
+#   FTDI MPSSE adapters     bring-up / bench use from a laptop over USB-SPI
+#   TI XDS110 (0451:bef3)   debug probe on TI EVMs and cascade boards
+#
+# Install:
+#   sudo cp 99-awr6243.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#
+# Groups (created by setup-awr6243.sh):
+#   spi, gpio, i2c, plugdev   — log out and back in after being added
+#
+# Verify:
+#   ls -la /dev/spidev* /dev/gpiochip* ; lsusb | grep -Ei '0403|0451'
+# ──────────────────────────────────────────────────────────────────────────
+
+# ─── Host SPI master (radar control + firmware download) ─────────────────
+SUBSYSTEM=="spidev", KERNEL=="spidev*", GROUP="spi", MODE="0660"
+
+# ─── GPIO character devices (NRESET, SOP0-2, HOST_INTR, NERROR) ──────────
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"
+
+# ─── Optional I2C control path (SOP2 SOP1 SOP0 = 1 1 1) ──────────────────
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
+
+# ─── FTDI MPSSE USB-SPI adapters (bench bring-up, TI EVM USB-SPI) ────────
+# 6001 FT232R · 6010 FT2232C/D/H · 6011 FT4232H · 6014 FT232H · 6015 FT230X
+# pyftdi/libftdi need the kernel's ftdi_sio detached from the MPSSE channel;
+# see mmwave/README.md -> "FTDI USB-SPI on Linux".
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6010", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6011", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+
+# ─── TI XDS110 debug probe (present on TI EVMs / cascade carriers) ───────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0451", ATTRS{idProduct}=="bef3", GROUP="dialout", MODE="0660", SYMLINK+="xds110_%E{ID_USB_INTERFACE_NUM}"

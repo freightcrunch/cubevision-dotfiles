@@ -84,10 +84,15 @@ dotfiles/
 ├── pytorch/              # PyTorch/TorchVision Jetson installer
 │   ├── setup-pytorch-jetson.sh
 │   └── torch-test.py
-├── mmwave/               # mmWave radar driver (RS-2944A / AWR2944)
+├── mmwave/               # mmWave radar hosts (AWR6243 + legacy RS-2944A)
 │   ├── README.md
-│   ├── 99-mmwave-radar.rules  # udev rules for CP2105 USB-UART
-│   └── setup-mmwave.sh        # Driver + deps installer
+│   ├── setup-awr6243.sh       # AWR6243/IWR6243 host setup (SPI + CSI-2)
+│   ├── 99-awr6243.rules       # udev rules for spidev / gpiochip / FTDI
+│   ├── awr6243/
+│   │   ├── board.env.example  # Carrier SPI bus + GPIO line map
+│   │   └── radar-ctl.sh       # SOP boot-mode strap + NRESET control
+│   ├── 99-mmwave-radar.rules  # udev rules for CP2105 USB-UART (legacy)
+│   └── setup-mmwave.sh        # RS-2944A driver + deps installer (legacy)
 ├── dev/                  # Nix flake dev environment
 │   ├── README.md
 │   ├── flake.nix
@@ -153,7 +158,8 @@ chmod +x scripts/install.sh
 ./scripts/install.sh --python    # pip, ruff config
 ./scripts/install.sh --js        # nvm, npm, eslint, prettier
 ./scripts/install.sh --pytorch   # prints PyTorch install instructions
-./scripts/install.sh --mmwave    # mmWave radar driver setup
+./scripts/install.sh --awr6243   # AWR6243/IWR6243 radar host setup
+./scripts/install.sh --mmwave    # legacy RS-2944A radar driver setup
 ./scripts/install.sh --packages  # apt packages only
 ```
 
@@ -298,42 +304,71 @@ bash neo4j/setup-neo4j.sh --apoc
 
 Browser UI at `http://127.0.0.1:7474`, Bolt at `bolt://127.0.0.1:7687`. Heap capped at 1 GB, page cache at 512 MB. See `neo4j/README.md`.
 
-## mmWave Radar (RS-2944A)
+## mmWave Radar (AWR6243 / IWR6243)
 
-Driver setup for the **D3 DesignCore RS-2944A** (TI AWR2944) 77 GHz mmWave radar sensor via the CP2105 USB-to-UART bridge.
+Host setup for the **TI AWR6243 / IWR6243** 57–64 GHz FMCW front end.
+Datasheet: [ti.com/lit/ds/symlink/iwr6243.pdf](https://www.ti.com/lit/ds/symlink/iwr6243.pdf?ts=1795627069032) (SWRS283A, Rev. A).
+
+The 6243 is a **front-end-only MMIC** — no on-chip R4F MCU, no C674x DSP, no on-chip
+memory, no UART CLI and no USB bridge. The Jetson is the radar's processor: it is the SPI
+master, it downloads the device firmware over SPI after every reset, and it receives raw
+ADC samples over MIPI CSI-2 (4 data + 1 clock lane). The mmWave SDK demo, the Demo
+Visualizer and `ti_mmwave_rospkg` do **not** apply to this part.
 
 ```bash
-# Full setup: kernel module, udev rules, dialout group, Python venv
-bash mmwave/setup-mmwave.sh
+# Full host setup: packages, spidev, GPIO/udev access, DFP staging, venv, capture path
+bash mmwave/setup-awr6243.sh
 
-# Check current driver state
-bash mmwave/setup-mmwave.sh --check
+# Readiness report, no changes
+bash mmwave/setup-awr6243.sh --check
 
-# With ROS Melodic desktop-full (Docker) + ti_mmwave_rospkg
-bash mmwave/setup-mmwave.sh --ros
+# Stage TI's device firmware package (MMWAVE-DFP-2G-60GHZ-FW, export-controlled)
+bash mmwave/setup-awr6243.sh --dfp ~/Downloads/mmwave_dfp_06_04_01_00.zip
 
-# Custom Python venv path
-bash mmwave/setup-mmwave.sh --venv ~/.venvs/myradar
+# Prove the host SPI path (radar unplugged, MOSI jumpered to MISO)
+bash mmwave/setup-awr6243.sh --spidev /dev/spidev1.0 --selftest
+
+# Strap the boot mode (SOP2 SOP1 SOP0 = 0 0 1) and pulse NRESET
+bash mmwave/awr6243/radar-ctl.sh boot spi
 ```
 
 This will:
-1. Load the `cp210x` kernel module (Silicon Labs CP2105) and make it boot-persistent
-2. Install udev rules creating stable symlinks: `/dev/radar_cfg` and `/dev/radar_data`
-3. Add the user to the `dialout` group for serial port access
-4. Create a Python venv with `pyserial`, `numpy`, `websockets`, `scipy`
-5. (Optional) Build a Docker image with `ros-melodic-desktop-full` + [ti_mmwave_rospkg](https://github.com/radar-lab/ti_mmwave_rospkg)
+1. Install `gpiod`, `libftdi1`, `i2c-tools`, `v4l-utils` and Python venv tooling
+2. Load `spidev`, make it boot-persistent, and point at `jetson-io` for the header pinmux
+3. Create/join the `spi`, `gpio`, `i2c`, `plugdev` groups and install `99-awr6243.rules`
+   for `/dev/spidev*`, `/dev/gpiochip*`, `/dev/i2c-*`, FTDI USB-SPI adapters and XDS110
+4. Stage the TI DFP into `~/ti/mmwave_dfp` and locate the firmware images
+5. Create `mmwave/awr6243/board.env` for your carrier's SPI bus and GPIO line offsets
+6. Create a Python venv with `numpy`, `scipy`, `websockets`, `spidev`, `pyftdi`
+7. Check the raw-capture path: CSI-2 V4L2 nodes, or the DCA1000 LVDS bench setup
 
-> **Note:** ROS Melodic targets Ubuntu 18.04 (Bionic) and cannot be installed natively on
-> Ubuntu 24.04. The `--ros` flag uses Docker with device passthrough for serial port access.
+> **Note:** CSI-2 capture on Tegra needs a device-tree overlay plus a V4L2 subdev driver —
+> TI ships no Jetson driver for this part, and the radar is not a camera. See
+> `mmwave/README.md` → *Capturing raw ADC data*.
 
-After setup, verify:
+See `mmwave/README.md` for the pin map, SOP boot modes, the mmWaveLink bring-up order and
+troubleshooting.
+
+### Legacy: RS-2944A (AWR2944)
+
+Driver setup for the **D3 DesignCore RS-2944A** (TI AWR2944) 77 GHz sensor via the CP2105
+USB-to-UART bridge — a different device class, kept for the older board.
+
+```bash
+bash mmwave/setup-mmwave.sh           # cp210x, udev rules, dialout, Python venv
+bash mmwave/setup-mmwave.sh --check   # check current driver state
+bash mmwave/setup-mmwave.sh --ros     # ROS Melodic desktop-full (Docker) + ti_mmwave_rospkg
+```
+
+It loads `cp210x`, installs udev rules for the stable `/dev/radar_cfg` and
+`/dev/radar_data` symlinks, adds the user to `dialout`, and creates a `pyserial`/`numpy`
+venv. Verify with:
+
 ```bash
 lsusb | grep "10c4"           # CP2105 detected
 ls -la /dev/radar_*           # symlinks present
 screen /dev/radar_cfg 115200  # CLI access (Ctrl+A K to exit)
 ```
-
-See `mmwave/README.md` for detailed hardware info, troubleshooting, and TI references.
 
 ## PyTorch on Jetson
 

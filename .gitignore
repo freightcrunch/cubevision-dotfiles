@@ -8,3 +8,6 @@ __pycache__/
 node_modules/
 target/
 .venv/
+
+# Local AWR6243 carrier config (board specific, generated from board.env.example)
+mmwave/awr6243/board.env
